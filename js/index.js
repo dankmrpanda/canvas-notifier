@@ -1,9 +1,7 @@
 /*
 npm init -y
-npm install discord.js
-npm install dotenv
-npm install node-fetch
-npm install string-strip-html
+npm install discord.js dotenv node-fetch string-strip-html
+node index.js
 */
 
 import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
@@ -21,26 +19,33 @@ const COURSE_ID = process.env.COURSE_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const ROLE_ID = process.env.ROLE_ID;
 
-const dataFilePath = path.resolve('./assignments.json');
+const dataDirectoryPath = './courses';
+const dataFilePath = path.resolve(`${dataDirectoryPath}/${COURSE_ID}.json`);
+
+// Ensure the directory and JSON file exist
+async function ensureJsonFile() {
+  try {
+    await fs.mkdir(dataDirectoryPath, { recursive: true });
+    try {
+      await fs.access(dataFilePath);
+    } catch {
+      const initialData = { assignments: [] };
+      await saveAssignments(initialData);
+      console.log(`Created file: ${dataFilePath}`);
+    }
+  } catch (error) {
+    console.error('Error ensuring JSON file:', error);
+  }
+}
 
 // Load or initialize JSON
 async function loadAssignments() {
   try {
     const data = await fs.readFile(dataFilePath, 'utf-8');
-    if (data.trim() === '') {
-      await saveAssignments({ assignments: [] });
-      return { assignments: [] };
-    }
-    return JSON.parse(data);
+    return JSON.parse(data.trim() || '{"assignments": []}');
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      const emptyData = { assignments: [] };
-      await saveAssignments(emptyData);
-      return emptyData;
-    } else {
-      console.error('Error reading assignments file:', error);
-      return { assignments: [] };
-    }
+    console.error('Error reading assignments file:', error);
+    return { assignments: [] };
   }
 }
 
@@ -56,9 +61,7 @@ async function saveAssignments(assignments) {
 // Fetch assignments
 async function fetchAssignments() {
   const response = await fetch(`https://hlpschools.instructure.com/api/v1/courses/${COURSE_ID}/assignments?per_page=100`, {
-    headers: {
-      Authorization: `Bearer ${CANVAS_TOKEN}`,
-    },
+    headers: { Authorization: `Bearer ${CANVAS_TOKEN}` },
   });
   if (!response.ok) {
     console.error('Failed to fetch assignments:', response.statusText);
@@ -67,11 +70,48 @@ async function fetchAssignments() {
   return response.json();
 }
 
-// Determine color based on days left
-function determineColor(daysLeft) {
-  if (daysLeft <= 2) return 0xff0000; // Red
-  if (daysLeft <= 5) return 0xffff00; // Yellow
-  return 0x00ff00; // Green
+// Determine embed color for normal postings
+function getNormalEmbedColor() {
+  return 0x3498db; // Blue
+}
+
+// Determine reminder embed color
+function getReminderEmbedColor(hoursLeft) {
+  if (hoursLeft <= 0.5) return 0xff0000; // Red: < 30 minutes
+  if (hoursLeft <= 3) return 0xffa500; // Orange: < 3 hours
+  if (hoursLeft <= 24) return 0xffff00; // Yellow: < 1 day
+  return 0x00ff00; // Green (default, won't trigger reminders)
+}
+
+// Send reminders
+async function sendReminder(assignment, hoursLeft, channel, storedAssignments) {
+  const reminderColor = getReminderEmbedColor(hoursLeft);
+  const reminders = { 24: "1 day left", 3: "3 hours left", 0.5: "30 minutes left" };
+  const reminderKey = hoursLeft <= 0.5 ? 0.5 : hoursLeft <= 3 ? 3 : 24;
+
+  // Skip if the reminder has already been sent
+  if (assignment.remindersSent.includes(reminderKey)) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Reminder: ${assignment.name}`)
+    .setDescription(`This is a reminder for the upcoming assignment.`)
+    .addFields(
+      { name: 'Deadline', value: `<t:${Math.floor(new Date(assignment.deadline).getTime() / 1000)}:F>`, inline: true },
+      { name: 'Time Left', value: reminders[reminderKey], inline: true },
+      { name: 'Points Worth', value: String(assignment.points_possible || 'N/A'), inline: true }
+    )
+    .setTimestamp()
+    .setColor(reminderColor);
+
+  try {
+    await channel.send({ content: `<@&${ROLE_ID}>`, embeds: [embed] });
+    console.log(`Reminder sent: ${reminders[reminderKey]} for assignment ${assignment.name}`);
+    // Mark reminder as sent
+    assignment.remindersSent.push(reminderKey);
+    await saveAssignments({ assignments: storedAssignments });
+  } catch (error) {
+    console.error(`Failed to send reminder for ${assignment.name}:`, error);
+  }
 }
 
 // Check for new assignments
@@ -95,40 +135,29 @@ async function checkForNewAssignments() {
     const isStored = storedAssignments.some((stored) => stored.id === assignment.id);
     if (isStored) continue;
 
-    const daysLeft = Math.ceil((dueDate - date) / (1000 * 60 * 60 * 24));
-    const embedColor = determineColor(daysLeft);
-
-    let description = stripHtml(assignment.description || '').result.trim();
-    if (description.length > 4096) {
-      description = `${description.slice(0, 4093)}...`;
-    }
-
     const embed = new EmbedBuilder()
       .setTitle(assignment.name)
-      .setDescription(description || 'No description available.')
+      .setDescription(stripHtml(assignment.description || '').result.trim() || 'No description available.')
       .addFields(
-        { name: 'Deadline', value: dueDate.toLocaleString(), inline: true },
+        { name: 'Deadline', value: `<t:${Math.floor(dueDate.getTime() / 1000)}:F>`, inline: true },
         { name: 'Points Worth', value: String(assignment.points_possible || 'N/A'), inline: true },
         { name: 'Submission Type', value: assignment.submission_types.join(', ') || 'N/A', inline: true },
         { name: 'Link', value: `[View Assignment](${assignment.html_url})`, inline: false }
       )
       .setTimestamp()
-      .setColor(embedColor);
+      .setColor(getNormalEmbedColor());
 
     const rolePing = `<@&${ROLE_ID}>`;
 
     try {
-      const sentMessage = await channel.send({
-        content: `${rolePing}, a new assignment has been posted!`,
-        embeds: [embed],
-      });
+      const sentMessage = await channel.send({ content: `${rolePing}, a new assignment has been posted!`, embeds: [embed] });
       console.log(`Notification sent for assignment: ${assignment.name}`);
-
       storedAssignments.push({
         id: assignment.id,
         name: assignment.name,
-        messageId: sentMessage.id,
         deadline: assignment.due_at,
+        points_possible: assignment.points_possible,
+        remindersSent: [],
       });
     } catch (error) {
       console.error(`Failed to send notification for assignment: ${assignment.name}`, error);
@@ -138,19 +167,43 @@ async function checkForNewAssignments() {
   await saveAssignments({ assignments: storedAssignments });
 }
 
+// Check for reminders
+async function checkForReminders() {
+  const channel = client.channels.cache.get(CHANNEL_ID);
+  if (!channel) return;
+
+  const date = new Date();
+  const storedData = await loadAssignments();
+  const storedAssignments = storedData.assignments;
+
+  for (const assignment of storedAssignments) {
+    const dueDate = new Date(assignment.deadline);
+    const hoursLeft = (dueDate - date) / (1000 * 60 * 60);
+
+    if (hoursLeft <= 24 && hoursLeft > 0) {
+      await sendReminder(assignment, hoursLeft, channel, storedAssignments);
+    }
+  }
+}
+
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  await ensureJsonFile();
+
   setInterval(() => {
     checkForNewAssignments()
       .then(() => console.log('Assignment check completed.'))
       .catch((error) => console.error('Error during assignment check:', error));
+
+    checkForReminders()
+      .then(() => console.log('Reminder check completed.'))
+      .catch((error) => console.error('Error during reminder check:', error));
   }, 10 * 60 * 1000);
 
-  checkForNewAssignments()
-    .then(() => console.log('Initial assignment check completed.'))
-    .catch((error) => console.error('Error during initial assignment check:', error));
+  await checkForNewAssignments();
+  await checkForReminders();
 });
 
 client.login(DISCORD_TOKEN);

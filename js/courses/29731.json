@@ -1,0 +1,46 @@
+{
+  "assignments": [
+    {
+      "id": 1677358,
+      "name": "HW #2: Calorimetry and Heat Capacity pg 287 #51-68  (ODD)",
+      "deadline": "2025-01-18T07:59:59Z",
+      "points_possible": 10,
+      "remindersSent": []
+    },
+    {
+      "id": 1839665,
+      "name": "College Board 5.6-5.10 Frayer Video Notes ",
+      "deadline": "2025-01-14T07:59:59Z",
+      "points_possible": 50,
+      "remindersSent": []
+    },
+    {
+      "id": 1677391,
+      "name": "Lab #4: Calorimtery Hess's Law Lab",
+      "deadline": "2025-02-01T07:59:59Z",
+      "points_possible": 50,
+      "remindersSent": []
+    },
+    {
+      "id": 1677395,
+      "name": "Lab #1: Design a HandWarmer",
+      "deadline": "2025-01-22T07:59:59Z",
+      "points_possible": 50,
+      "remindersSent": []
+    },
+    {
+      "id": 1677347,
+      "name": "Lab #3: Elephant Toothpaste",
+      "deadline": "2025-01-28T07:59:59Z",
+      "points_possible": 10,
+      "remindersSent": []
+    },
+    {
+      "id": 1677389,
+      "name": "Lab #2: Crystal Violet Lab",
+      "deadline": "2025-01-13T07:59:59Z",
+      "points_possible": 50,
+      "remindersSent": []
+    }
+  ]
+}
