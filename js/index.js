@@ -192,18 +192,32 @@ client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
   await ensureJsonFile();
 
-  setInterval(() => {
-    checkForNewAssignments()
-      .then(() => console.log('Assignment check completed.'))
-      .catch((error) => console.error('Error during assignment check:', error));
+  // Run both checks immediately
+  try {
+    await checkForNewAssignments();
+    console.log('Initial assignment check completed.');
+    await checkForReminders();
+    console.log('Initial reminder check completed.');
+  } catch (error) {
+    console.error('Error during initial checks:', error);
+  }
 
-    checkForReminders()
-      .then(() => console.log('Reminder check completed.'))
-      .catch((error) => console.error('Error during reminder check:', error));
-  }, 10 * 60 * 1000);
+  // Schedule checks to run every 10 minutes
+  setInterval(async () => {
+    try {
+      await checkForNewAssignments();
+      console.log('Assignment check completed.');
+    } catch (error) {
+      console.error('Error during assignment check:', error);
+    }
 
-  await checkForNewAssignments();
-  await checkForReminders();
+    try {
+      await checkForReminders();
+      console.log('Reminder check completed.');
+    } catch (error) {
+      console.error('Error during reminder check:', error);
+    }
+  }, 10 * 60 * 1000); // Every 10 minutes
 });
 
 client.login(DISCORD_TOKEN);
