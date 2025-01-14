@@ -69,7 +69,7 @@ async function fetchAssignments() {
   }
   return response.json();
 }
-
+//assignments section done -----------------------------------------------------------------------------------------------------
 // Determine embed color for normal postings
 function getNormalEmbedColor() {
   return 0x3498db; // Blue
@@ -87,8 +87,8 @@ function getReminderEmbedColor(hoursLeft) {
 // Send reminders
 async function sendReminder(assignment, hoursLeft, channel, storedAssignments) {
   const reminderColor = getReminderEmbedColor(hoursLeft);
-  const reminders = { 24: "1 day left", 6: "6 hours left", 3: "3 hours left", 1: "30 minutes left" };
-  const reminderKey = hoursLeft <= 1 ? 1 : hoursLeft <= 3 ? 3 : hoursLeft <= 6 ? 6 : 24;
+  const reminders = { 24: "1 day left", 6: "6 hours left", 3: "3 hours left", 0.5: "30 minutes left" };
+  const reminderKey = hoursLeft <= 0.5 ? 0.5 : hoursLeft <= 3 ? 3 : hoursLeft <= 6 ? 6 : 24;
 
   // Skip if the reminder has already been sent
   if (assignment.remindersSent.includes(reminderKey)) return;
@@ -103,7 +103,7 @@ async function sendReminder(assignment, hoursLeft, channel, storedAssignments) {
       },
       { 
         name: 'Time Left', 
-        value: reminders[reminderKey] || 'N/A', 
+        value: `<t:${Math.floor(new Date(reminder.date).getTime() / 1000)}:R>` || 'N/A', 
         inline: true 
       },
       { 
@@ -135,6 +135,49 @@ async function sendReminder(assignment, hoursLeft, channel, storedAssignments) {
     await saveAssignments({ assignments: storedAssignments });
   } catch (error) {
     console.error(`Failed to send reminder for ${assignment.name}:`, error);
+  }
+}
+
+async function sendCustomReminder(reminder, hoursLeft, channel, storedReminders) {
+  const reminderColor = getReminderEmbedColor(hoursLeft); // Get the appropriate color based on time left
+  const reminders = { 24: "1 day left", 6: "6 hours left", 3: "3 hours left", 0.5: "30 minutes left", 0: "Now"};
+  const reminderKey = hoursLeft <= 0 ? 0 : hoursLeft <= 0.5 ? 0.5 : hoursLeft <= 3 ? 3 : hoursLeft <= 6 ? 6 : 24;
+
+  // Skip if the reminder has already been sent
+  if (reminder.remindersSent && reminder.remindersSent.includes(reminderKey)) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Reminder: ${reminder.title}`)
+    .addFields(
+      { 
+        name: 'Reminder Date', 
+        value: `<t:${Math.floor(new Date(reminder.date).getTime() / 1000)}:F>`, 
+        inline: true 
+      },
+      { 
+        name: 'Time Left', 
+        value: `<t:${Math.floor(new Date(reminder.date).getTime() / 1000)}:R>` || 'N/A', 
+        inline: true 
+      },
+      { 
+        name: 'Description', 
+        value: reminder.description || 'No description provided.', 
+        inline: true 
+      }
+    )
+    .setTimestamp()
+    .setColor(reminderColor);
+
+  try {
+    // Send the reminder
+    await channel.send({ content: `<@&${ROLE_ID}>`, embeds: [embed] });
+    console.log(`Reminder sent: ${reminders[reminderKey]} for reminder "${reminder.title}"`);
+    // Mark reminder as sent
+    reminder.remindersSent.push(reminderKey);
+    // Save the updated reminders back to the file
+    await saveReminders({ reminders: storedReminders });
+  } catch (error) {
+    console.error(`Failed to send reminder for ${reminder.title}:`, error);
   }
 }
 
@@ -226,7 +269,7 @@ async function checkForReminders() {
   const date = new Date();
   const storedData = await loadAssignments();
   const storedAssignments = storedData.assignments;
-
+  console.log(storedAssignments);
   for (const assignment of storedAssignments) {
     const dueDate = new Date(assignment.deadline);
     const hoursLeft = (dueDate - date) / (1000 * 60 * 60);
@@ -237,10 +280,30 @@ async function checkForReminders() {
   }
 }
 
+// Check for custom reminders
+async function checkForCustomReminders() {
+  const channel = client.channels.cache.get(CHANNEL_ID);
+  if (!channel) return;
+
+  const date = new Date();
+  const storedData = await loadReminders(); // Load custom reminders
+  const storedReminders = storedData.reminder;
+  console.log(storedReminders);
+  for (const reminder of storedReminders) {
+    const reminderDate = new Date(reminder.date);
+    const hoursLeft = (reminderDate - date) / (1000 * 60 * 60); // Calculate the hours left
+
+    if (hoursLeft <= 24 && hoursLeft > 0) {
+      await sendCustomReminder(reminder, hoursLeft, channel, storedReminders);
+    }
+  }
+}
+
 async function remindercheck() {
   while (true) {
     try {
       await checkForReminders();
+      await checkForCustomReminders();
       // console.log('Reminder check completed.');
     } catch (error) {
       console.error('Error during reminder check:', error);
@@ -291,7 +354,7 @@ client.once('ready', async () => {
 async function loadReminders() {
   try {
     const data = await fs.readFile(dataFilePath, 'utf-8');
-    return JSON.parse(data.trim() || '[]').reminder; // Parse JSON or default to an empty array
+    return JSON.parse(data.trim() || '{"reminder": []}'); // Parse JSON or default to an empty array
   } catch (error) {
     if (error.code === 'ENOENT') {
       // File doesn't exist, return an empty array
@@ -302,6 +365,7 @@ async function loadReminders() {
     }
   }
 }
+
 // Function to save reminders to JSON
 async function saveReminders(reminders) {
   try {
@@ -408,6 +472,13 @@ client.on('interactionCreate', async (interaction) => {
         flags: 64
       });
     }
+    const testTime = new Date()
+    if (reminderDateTime.getTime() <= testTime.getTime()){
+      return await interaction.reply({
+        content: 'Invalid date or time provided. Please check your inputs.',
+        flags: 64
+      });
+    }
 
     // Save the reminder to a file or database (example uses JSON file)
     const reminder = {
@@ -430,9 +501,9 @@ client.on('interactionCreate', async (interaction) => {
         data.reminder = [];
       }
 
-        data.reminder.push(reminder);
+      data.reminder.push(reminder);
+      console.log(data)
       await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2));
-
       await interaction.reply({
         content: `Reminder "${title}" set for ${reminderDateTime.toLocaleString()}.`
       });
@@ -520,7 +591,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
   }
-
 });
 
 client.login(DISCORD_TOKEN);

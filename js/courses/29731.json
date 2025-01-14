@@ -3,7 +3,7 @@
     {
       "id": 1677358,
       "name": "HW #2: Calorimetry and Heat Capacity pg 287 #51-68  (ODD)",
-      "deadline": "2025-01-18T07:59:59Z",
+      "deadline": "2025-01-21T07:59:59Z",
       "points_possible": 10,
       "link": "https://hlpschools.instructure.com/courses/29731/assignments/1677358",
       "submission_type": [
@@ -12,17 +12,28 @@
       "remindersSent": []
     },
     {
-      "id": 1839665,
-      "name": "College Board 5.6-5.10 Frayer Video Notes ",
-      "deadline": "2025-01-14T07:59:59Z",
-      "points_possible": 50,
-      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1839665",
+      "id": 1841819,
+      "name": "6.2 Frayer Notes College Board",
+      "deadline": "2025-01-15T18:00:00Z",
+      "points_possible": 10,
+      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1841819",
       "submission_type": [
         "online_upload"
       ],
       "remindersSent": [
         24
       ]
+    },
+    {
+      "id": 1843517,
+      "name": "Unit 6: Progress Checks",
+      "deadline": "2025-02-01T07:59:59Z",
+      "points_possible": 50,
+      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1843517",
+      "submission_type": [
+        "online_upload"
+      ],
+      "remindersSent": []
     },
     {
       "id": 1677391,
@@ -56,39 +67,31 @@
         "online_upload"
       ],
       "remindersSent": []
-    },
-    {
-      "id": 1841818,
-      "name": "6.1 Frayer Notes College Board",
-      "deadline": "2025-01-14T17:00:00Z",
-      "points_possible": 10,
-      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1841818",
-      "submission_type": [
-        "online_upload"
-      ],
-      "remindersSent": [
-        24
-      ]
-    },
-    {
-      "id": 1841819,
-      "name": "6.2 Frayer Notes College Board",
-      "deadline": "2025-01-15T18:00:00Z",
-      "points_possible": 10,
-      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1841819",
-      "submission_type": [
-        "online_upload"
-      ],
-      "remindersSent": [
-        24
-      ]
     }
   ],
   "reminder": [
     {
-      "title": "s",
+      "title": "a",
       "description": "No description provided.",
-      "date": "2025-01-14T19:15:00.000Z",
+      "date": "2025-01-14T21:52:00.000Z",
+      "userId": "607323416395120640"
+    },
+    {
+      "title": "a",
+      "description": "No description provided.",
+      "date": "2025-01-14T21:54:00.000Z",
+      "userId": "607323416395120640"
+    },
+    {
+      "title": "a",
+      "description": "No description provided.",
+      "date": "2025-01-14T21:59:00.000Z",
+      "userId": "607323416395120640"
+    },
+    {
+      "title": "a",
+      "description": "No description provided.",
+      "date": "2025-01-15T01:30:00.000Z",
       "userId": "607323416395120640"
     }
   ]
