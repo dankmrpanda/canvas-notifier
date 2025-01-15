@@ -103,7 +103,7 @@ async function sendReminder(assignment, hoursLeft, channel, storedAssignments) {
       },
       { 
         name: 'Time Left', 
-        value: `<t:${Math.floor(new Date(reminder.date).getTime() / 1000)}:R>` || 'N/A', 
+        value: `<t:${Math.floor(new Date(assignment.deadline).getTime() / 1000)}:R>` || 'N/A', 
         inline: true 
       },
       { 
@@ -540,8 +540,7 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.respond([]); // Send an empty response if an error occurs
     }
   }
-  
-  // Handle delete-reminder command
+
   if (interaction.isChatInputCommand() && interaction.commandName === 'delete-reminder') {
     try {
       let data;
