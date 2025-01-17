@@ -1,11 +1,13 @@
 /*
-node commands/reminderAdd.js
+node commands/slashCmd.js
 updates slash cmd
 */
+import { DISCORD_TOKEN, CLIENT_ID} from '../../config.js';
+
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { REST, Routes, ApplicationCommandOptionType, PermissionFlagsBits } from 'discord.js';
+import { REST, Routes, ApplicationCommandOptionType } from 'discord.js';
 
 const commands = [
   {
@@ -67,7 +69,7 @@ const commands = [
 ];
 
 
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
 (async () => {
   try {
@@ -75,7 +77,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
     await rest.put(
       Routes.applicationCommands(
-        process.env.CLIENT_ID
+        CLIENT_ID
       ),
       { body: commands }
     );

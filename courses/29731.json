@@ -67,32 +67,31 @@
         "online_upload"
       ],
       "remindersSent": []
+    },
+    {
+      "id": 1843735,
+      "name": "6.3 Frayer Notes College Board",
+      "deadline": "2025-01-17T07:59:59Z",
+      "points_possible": 10,
+      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1843735",
+      "submission_type": [
+        "online_upload"
+      ],
+      "remindersSent": [
+        24
+      ]
+    },
+    {
+      "id": 1843736,
+      "name": "6.4 Frayer Notes College Board",
+      "deadline": "2025-01-18T07:59:59Z",
+      "points_possible": 10,
+      "link": "https://hlpschools.instructure.com/courses/29731/assignments/1843736",
+      "submission_type": [
+        "online_upload"
+      ],
+      "remindersSent": []
     }
   ],
-  "reminder": [
-    {
-      "title": "a",
-      "description": "No description provided.",
-      "date": "2025-01-14T21:52:00.000Z",
-      "userId": "607323416395120640"
-    },
-    {
-      "title": "a",
-      "description": "No description provided.",
-      "date": "2025-01-14T21:54:00.000Z",
-      "userId": "607323416395120640"
-    },
-    {
-      "title": "a",
-      "description": "No description provided.",
-      "date": "2025-01-14T21:59:00.000Z",
-      "userId": "607323416395120640"
-    },
-    {
-      "title": "a",
-      "description": "No description provided.",
-      "date": "2025-01-15T01:30:00.000Z",
-      "userId": "607323416395120640"
-    }
-  ]
+  "reminders": []
 }
