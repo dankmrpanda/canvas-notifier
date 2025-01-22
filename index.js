@@ -5,7 +5,7 @@ node index.js
 */
 import { Client, GatewayIntentBits } from 'discord.js';
 
-import { handlePingCommand } from './src/commands/ping.js';
+// import { handlePingCommand } from './src/commands/ping.js';
 import { handleAddReminder } from './src/commands/addReminder.js';
 import { delReminderAutocomplete,  handleDelReminder} from './src/commands/delReminder.js';
 import { DISCORD_TOKEN } from './config.js';
@@ -55,9 +55,9 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-  if (interaction.commandName === 'ping') {
-    handlePingCommand(interaction);
-  }
+  // if (interaction.commandName === 'ping') {
+  //   handlePingCommand(interaction);
+  // }
 
   if (interaction.commandName === 'add-reminder') {
     handleAddReminder(interaction);

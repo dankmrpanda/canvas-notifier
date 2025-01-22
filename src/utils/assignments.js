@@ -1,18 +1,27 @@
 import fs from 'fs/promises';
-import { dataFilePath, CANVAS_TOKEN, CHANNEL_ID, ROLE_ID, COURSE_ID} from '../../config.js';
+import { dataFilePath, CANVAS_TOKEN, CHANNEL_ID, COURSE_ID} from '../../config.js';
 import { EmbedBuilder } from 'discord.js';
 import { stripHtml } from 'string-strip-html';
-import { getNormalEmbedColor } from './reminders.js';
 
 
 // Load or initialize JSON
 export async function loadAssignments() {
   try {
-    const data = await fs.readFile(dataFilePath, 'utf-8');
-    return JSON.parse(data.trim() || '{"assignments": []}');
+    let data = await fs.readFile(dataFilePath, 'utf-8');
+    // Parse JSON and return the entire content
+    data = JSON.parse(data.trim() || '{}'); 
+    if (!Array.isArray(data.assignments)) {
+      data.assignments = [];
+    }
+    return data;
   } catch (error) {
-    console.error('Error reading assignments file:', error);
-    return { assignments: [] };
+    if (error.code === 'ENOENT') {
+      // File doesn't exist, return an empty JSON object
+      return {};
+    } else {
+      console.error('Error reading json file:', error);
+      throw error; // Re-throw the error to be handled upstream
+    }
   }
 }
 
@@ -37,7 +46,7 @@ export async function fetchAssignments() {
   return response.json();
 }
 
-// Check for new assignments
+// Check for new assignments and update JSON file
 export async function checkForNewAssignments(client) {
   const assignments = await fetchAssignments();
   const channel = client.channels.cache.get(CHANNEL_ID);
@@ -50,50 +59,71 @@ export async function checkForNewAssignments(client) {
   const date = new Date();
 
   // Load existing data
-  let storedData;
-  try {
-    const fileContent = await fs.readFile(dataFilePath, 'utf-8');
-    storedData = JSON.parse(fileContent.trim() || '{}');
-  } catch (error) {
-    console.error('Error reading assignments file:', error);
-    storedData = { assignments: [] };
-  }
-
-  // Ensure the assignments array exists in the JSON data
-  if (!Array.isArray(storedData.assignments)) {
-    storedData.assignments = [];
-  }
-
+  let storedData = await loadAssignments();
   const storedAssignments = storedData.assignments;
-
   for (const assignment of assignments) {
     const dueDate = new Date(assignment.due_at);
     if (dueDate <= date) continue; // Skip past-due assignments
 
-    const isStored = storedAssignments.some((stored) => stored.id === assignment.id);
-    if (isStored) continue; // Skip already stored assignments
+    const storedAssignmentIndex = storedAssignments.findIndex((stored) => stored.id === assignment.id);
 
-    // Prepare the embed for the new assignment
-    const embed = new EmbedBuilder()
-      .setTitle(assignment.name)
-      .setDescription(stripHtml(assignment.description || '').result.trim() || 'No description available.')
-      .addFields(
-        { name: 'Deadline', value: `<t:${Math.floor(dueDate.getTime() / 1000)}:F>`, inline: true },
-        { name: 'Points Worth', value: String(assignment.points_possible || 'N/A'), inline: true },
-        { name: 'Submission Type', value: assignment.submission_types.join(', ') || 'N/A', inline: true },
-        { name: 'Link', value: `[View Assignment](${assignment.html_url})`, inline: false }
-      )
-      .setTimestamp()
-      .setColor(getNormalEmbedColor());
+    if (storedAssignmentIndex >= 0) {
+      // Assignment exists in JSON, check for updates
+      const storedAssignment = storedAssignments[storedAssignmentIndex];
+      let updated = false;
 
-    const rolePing = `<@&${ROLE_ID}>`;
+      // Check for changes in the assignment details
+      if (new Date(storedAssignment.deadline).getTime() !== dueDate.getTime()) {
+        storedAssignment.deadline = assignment.due_at;
+        updated = true;
+      }
+      // if (storedAssignment.points_possible !== assignment.points_possible) {
+      //   storedAssignment.points_possible = assignment.points_possible;
+      //   updated = true;
+      // }
+      // if (storedAssignment.name !== assignment.name) {
+      //   storedAssignment.name = assignment.name;
+      //   updated = true;
+      // }
+      // if (storedAssignment.link !== assignment.html_url) {
+      //   storedAssignment.link = assignment.html_url;
+      //   updated = true;
+      // }
+      // if (JSON.stringify(storedAssignment.submission_type) !== JSON.stringify(assignment.submission_types)) {
+      //   storedAssignment.submission_type = assignment.submission_types;
+      //   updated = true;
+      // }
 
-    try {
-      // Send the assignment notification to the channel
-      // const sentMessage = await channel.send({ content: `${rolePing}, a new assignment has been posted!`, embeds: [embed] });
-      console.log(`Notification sent for assignment: ${assignment.name}`);
+      if (updated) {
+        console.log(`Updated assignment: ${assignment.name}`);
+        // Notify about the update (optional)
+        storedAssignments[storedAssignmentIndex] = {
+          id: assignment.id,
+          name: assignment.name,
+          deadline: assignment.due_at,
+          points_possible: assignment.points_possible,
+          link: assignment.html_url,
+          submission_type: assignment.submission_types,
+          remindersSent: [],
+        };
+        const updateEmbed = new EmbedBuilder()
+          .setTitle(`Updated Assignment: ${assignment.name}`)
+          .setDescription(`<t:${Math.floor(new Date(storedAssignment.deadline).getTime() / 1000)}:F> ==> <t:${Math.floor(dueDate.getTime() / 1000)}:F>`)
+          .addFields(
+            { name: 'New Deadline', value: `<t:${Math.floor(dueDate.getTime() / 1000)}:F>`, inline: true },
+            { name: 'Link', value: `[View Assignment](${assignment.html_url})`, inline: false }
+          )
+          .setColor(0xFFA500); // Orange for updates
 
-      // Append the new assignment to the stored assignments
+        try {
+          await channel.send({ content: `The assignment "${assignment.name}" has been updated!`, embeds: [updateEmbed] });
+        } catch (error) {
+          console.error(`Failed to send update notification for assignment: ${assignment.name}`, error);
+        }
+      }
+    } else {
+      // New assignment: Add it to the stored assignments
+      console.log(`Adding new assignment: ${assignment.name}`);
       storedAssignments.push({
         id: assignment.id,
         name: assignment.name,
@@ -103,16 +133,28 @@ export async function checkForNewAssignments(client) {
         submission_type: assignment.submission_types,
         remindersSent: [],
       });
-    } catch (error) {
-      console.error(`Failed to send notification for assignment: ${assignment.name}`, error);
+
+      // Notify about the new assignment
+      const embed = new EmbedBuilder()
+        .setTitle(assignment.name)
+        .setDescription(stripHtml(assignment.description || '').result.trim() || 'No description available.')
+        .addFields(
+          { name: 'Deadline', value: `<t:${Math.floor(dueDate.getTime() / 1000)}:F>`, inline: true },
+          { name: 'Points Worth', value: String(assignment.points_possible || 'N/A'), inline: true },
+          { name: 'Submission Type', value: assignment.submission_types.join(', ') || 'N/A', inline: true },
+          { name: 'Link', value: `[View Assignment](${assignment.html_url})`, inline: false }
+        )
+        .setTimestamp()
+        .setColor(0x3498DB); // Blue for new assignments
+
+      try {
+        await channel.send({ content: `A new assignment has been posted!`, embeds: [embed] });
+      } catch (error) {
+        console.error(`Failed to send notification for assignment: ${assignment.name}`, error);
+      }
     }
   }
 
-  // Save the updated JSON data without overwriting the entire file
-  try {
-    await fs.writeFile(dataFilePath, JSON.stringify(storedData, null, 2));
-    console.log('Updated assignments saved successfully.');
-  } catch (error) {
-    console.error('Error saving assignments file:', error);
-  }
+  // Save the updated JSON data
+  saveAssignments(storedData)
 }
