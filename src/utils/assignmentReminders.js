@@ -1,4 +1,4 @@
-import { CHANNEL_ID } from "../../config.js";
+import { CHANNEL_ID, ROLE_ID } from "../../config.js";
 import { loadAssignments, saveAssignments } from "./assignments.js";
 import { getReminderEmbedColor } from './reminders.js'
 import { EmbedBuilder } from 'discord.js';
@@ -64,7 +64,7 @@ export async function sendReminder(assignment, hoursLeft, channel, storedData, i
     .setColor(reminderColor);
 
   try {
-    // await channel.send({ content: `<@&${ROLE_ID}>`, embeds: [embed] }); //-------------------------------------------------------------------
+    await channel.send({ content: `<@&${ROLE_ID}>`, embeds: [embed] }); //-------------------------------------------------------------------
     console.log(`Reminder sent: ${reminders[reminderKey]} for assignment ${assignment.name}`);
     storedData.assignments[i].remindersSent.push(reminderKey);
     await saveAssignments(storedData);

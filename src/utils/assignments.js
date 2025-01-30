@@ -36,7 +36,7 @@ export async function saveAssignments(assignments) {
 
 // Fetch assignments
 export async function fetchAssignments() {
-  const response = await fetch(`https://hlpschools.instructure.com/api/v1/courses/${COURSE_ID}/assignments?per_page=100`, {
+  const response = await fetch(`https://hlpschools.instructure.com/api/v1/courses/${COURSE_ID}/assignments?per_page=10000&bucket=upcoming`, {
     headers: { Authorization: `Bearer ${CANVAS_TOKEN}` },
   });
   if (!response.ok) {
@@ -45,7 +45,6 @@ export async function fetchAssignments() {
   }
   return response.json();
 }
-
 // Check for new assignments and update JSON file
 export async function checkForNewAssignments(client) {
   const assignments = await fetchAssignments();
@@ -55,16 +54,41 @@ export async function checkForNewAssignments(client) {
     console.error('Channel not found');
     return;
   }
+  // console.log(assignments);
 
   const date = new Date();
 
   // Load existing data
   let storedData = await loadAssignments();
   const storedAssignments = storedData.assignments;
-  for (const assignment of assignments) {
-    const dueDate = new Date(assignment.due_at);
-    if (dueDate <= date) continue; // Skip past-due assignments
-
+  // Create a set of current assignment IDs for comparison
+  const currentAssignmentIds = new Set(assignments.map((assignment) => assignment.id));
+  // console.log(currentAssignmentIds);
+  // Find and remove outdated assignments
+  var assignmentsToRemove = [];
+  for (var i = 0; i < storedAssignments.length; i++) {
+    if (!currentAssignmentIds.has(storedAssignments[i].id)) {
+      assignmentsToRemove.push(storedAssignments[i]);
+    }
+  }
+  // const assignmentsToRemove = storedAssignments.filter(
+  //   (stored) => !currentAssignmentIds.has(stored.id) ||
+  //   stored.due_at === undefined // Explicitly check for null `due_at`
+  // );
+  
+  if (assignmentsToRemove.length > 0) {
+    console.log(`Removing ${assignmentsToRemove.length} outdated assignments:`);
+    assignmentsToRemove.forEach((removedAssignment) =>
+      console.log(`- ${removedAssignment.name}`)
+  );
+  // Update storedAssignments by removing outdated assignments
+  storedData.assignments = storedData.assignments.filter(
+    (stored) => !assignmentsToRemove.some((toRemove) => toRemove.id === stored.id)
+  );
+}
+for (const assignment of assignments) {
+  const dueDate = new Date(assignment.due_at);
+  if (dueDate <= date) continue; // Skip past-due assignments
     const storedAssignmentIndex = storedAssignments.findIndex((stored) => stored.id === assignment.id);
 
     if (storedAssignmentIndex >= 0) {
@@ -72,27 +96,10 @@ export async function checkForNewAssignments(client) {
       const storedAssignment = storedAssignments[storedAssignmentIndex];
       let updated = false;
 
-      // Check for changes in the assignment details
       if (new Date(storedAssignment.deadline).getTime() !== dueDate.getTime()) {
         storedAssignment.deadline = assignment.due_at;
         updated = true;
       }
-      // if (storedAssignment.points_possible !== assignment.points_possible) {
-      //   storedAssignment.points_possible = assignment.points_possible;
-      //   updated = true;
-      // }
-      // if (storedAssignment.name !== assignment.name) {
-      //   storedAssignment.name = assignment.name;
-      //   updated = true;
-      // }
-      // if (storedAssignment.link !== assignment.html_url) {
-      //   storedAssignment.link = assignment.html_url;
-      //   updated = true;
-      // }
-      // if (JSON.stringify(storedAssignment.submission_type) !== JSON.stringify(assignment.submission_types)) {
-      //   storedAssignment.submission_type = assignment.submission_types;
-      //   updated = true;
-      // }
 
       if (updated) {
         console.log(`Updated assignment: ${assignment.name}`);
@@ -108,7 +115,7 @@ export async function checkForNewAssignments(client) {
         };
         const updateEmbed = new EmbedBuilder()
           .setTitle(`Updated Assignment: ${assignment.name}`)
-          .setDescription(`<t:${Math.floor(new Date(storedAssignment.deadline).getTime() / 1000)}:F> ==> <t:${Math.floor(dueDate.getTime() / 1000)}:F>`)
+          .setDescription(`<t:${Math.floor(dueDate.getTime() / 1000)}:F>`)
           .addFields(
             { name: 'New Deadline', value: `<t:${Math.floor(dueDate.getTime() / 1000)}:F>`, inline: true },
             { name: 'Link', value: `[View Assignment](${assignment.html_url})`, inline: false }
@@ -156,5 +163,7 @@ export async function checkForNewAssignments(client) {
   }
 
   // Save the updated JSON data
-  saveAssignments(storedData)
+  await saveAssignments(storedData);
 }
+
+

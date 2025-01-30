@@ -23,8 +23,8 @@ export async function checkForCustomReminders(client) {
 
 export async function sendCustomReminder(reminder, hoursLeft, channel, storedData, i) {
   const reminderColor = getReminderEmbedColor(hoursLeft); // Get the appropriate color based on time left
-  const reminders = { 24: "1 day left", 6: "6 hours left", 3: "3 hours left", 0.5: "30 minutes left", 0: "Now"};
-  const reminderKey = hoursLeft <= 0 ? 0 : hoursLeft <= 0.5 ? 0.5 : hoursLeft <= 3 ? 3 : hoursLeft <= 6 ? 6 : 24;
+  const reminders = { 168: "1 week left", 72: "3 days left", 24: "1 day left", 0: "Now"};
+  const reminderKey = hoursLeft <= 0 ? 0 : hoursLeft <= 72 ? 72 : hoursLeft <= 24 ? 24 : 168;
 
   // Skip if the reminder has already been sent
   if (reminder.remindersSent.includes(reminderKey)) return;
