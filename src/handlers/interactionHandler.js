@@ -11,7 +11,8 @@ import {
     handleAssignmentsSelectMenu, 
     handleAssignmentsRefresh 
 } from '../commands/assignments.js';
-import { handleAssignmentButton } from './buttonHandler.js';
+import { handleAssignmentButton, handleCourseRoleToggle } from './buttonHandler.js';
+import log from '../utils/logger.js';
 
 /**
  * Handle all incoming Discord interactions
@@ -43,7 +44,7 @@ export async function handleInteraction(interaction) {
             return;
         }
     } catch (error) {
-        console.error('Error handling interaction:', error);
+        log.error('Error handling interaction', error);
         
         // Try to respond with an error message
         try {
@@ -58,7 +59,7 @@ export async function handleInteraction(interaction) {
                 await interaction.reply(errorResponse);
             }
         } catch (replyError) {
-            console.error('Failed to send error response:', replyError);
+            log.error('Failed to send error response', replyError);
         }
     }
 }
@@ -82,7 +83,13 @@ async function handleButtonInteraction(interaction) {
         return;
     }
     
-    console.warn(`Unknown button interaction: ${customId}`);
+    // Course role toggle button
+    if (customId.startsWith('course_role_toggle:')) {
+        await handleCourseRoleToggle(interaction);
+        return;
+    }
+    
+    log.warn(`Unknown button interaction: ${customId}`);
     await interaction.reply({
         content: '❌ Unknown button.',
         ephemeral: true
@@ -102,7 +109,7 @@ async function handleSelectMenuInteraction(interaction) {
         return;
     }
     
-    console.warn(`Unknown select menu interaction: ${customId}`);
+    log.warn(`Unknown select menu interaction: ${customId}`);
     await interaction.reply({
         content: '❌ Unknown menu.',
         ephemeral: true
@@ -121,7 +128,7 @@ async function handleAutocomplete(interaction) {
             await delReminderAutocomplete(interaction);
             break;
         default:
-            console.warn(`Unknown autocomplete command: ${commandName}`);
+            log.warn(`Unknown autocomplete command: ${commandName}`);
             await interaction.respond([]);
     }
 }
@@ -132,6 +139,9 @@ async function handleAutocomplete(interaction) {
  */
 async function handleCommand(interaction) {
     const { commandName } = interaction;
+    const userId = interaction.user.id;
+    
+    log.command(commandName, userId, interaction.options?.data);
     
     switch (commandName) {
         case 'assignments':
@@ -147,7 +157,7 @@ async function handleCommand(interaction) {
             await handleDelReminder(interaction);
             break;
         default:
-            console.warn(`Unknown command: ${commandName}`);
+            log.warn(`Unknown command: ${commandName}`);
             await interaction.reply({
                 content: '❌ Unknown command.',
                 ephemeral: true
