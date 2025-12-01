@@ -1,5 +1,7 @@
 # Canvas Notifier
 
+# please look at the dev branch for a more updated and maintained version of the bot
+
 Canvas Notifier is a Discord bot that monitors a Canvas course and posts updates to your Discord server. It can announce new assignments, send reminders before due dates and lets users create custom reminders through slash commands.
 
 ## Features
