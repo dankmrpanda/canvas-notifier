@@ -1,75 +1,87 @@
-/*
-npm init -y
-npm install discord.js dotenv node-fetch string-strip-html
-node index.js
-*/
+/**
+ * Canvas Notifier Discord Bot
+ * Main entry point
+ * 
+ * Monitors Canvas LMS for assignments and sends notifications to Discord.
+ * Creates assignment-specific roles for targeted reminders.
+ * Supports custom reminders via slash commands.
+ */
 import { Client, GatewayIntentBits } from 'discord.js';
+import { DISCORD_TOKEN, TIMING, validateConfig } from './config.js';
+import { ensureDataFile } from './src/utils/dataStore.js';
+import { checkForNewAssignments } from './src/services/assignmentService.js';
+import { startReminderLoop } from './src/services/reminderService.js';
+import { handleInteraction } from './src/handlers/interactionHandler.js';
 
-// import { handlePingCommand } from './src/commands/ping.js';
-import { handleAddReminder } from './src/commands/addReminder.js';
-import { delReminderAutocomplete,  handleDelReminder} from './src/commands/delReminder.js';
-import { DISCORD_TOKEN } from './config.js';
+// Validate configuration before starting
+if (!validateConfig()) {
+    console.error('❌ Configuration validation failed. Please check your .env file.');
+    process.exit(1);
+}
 
-import { ensureJsonFile } from './src/utils/jsonHandling.js';
-import { checkForReminders } from './src/utils/assignmentReminders.js';
-import { checkForNewAssignments } from './src/utils/assignments.js';
-import { remindercheck } from './src/utils/reminders.js'
+// Create Discord client with required intents
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,  // Required for fetching members with roles
+        GatewayIntentBits.GuildMessages  // Required for message context
+    ]
+});
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
+// Bot ready event
 client.once('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-  await ensureJsonFile();
-
-  // Run both checks immediately
-  try {
-    await checkForNewAssignments(client);
-    console.log('Initial assignment check completed.');
-    await checkForReminders(client);
-    console.log('Initial reminder check completed.');
-  } catch (error) {
-    console.error('Error during initial checks:', error);
-  }
-
-  // Variable to track the last check time for assignments
-  let lastAssignmentCheckTime = Date.now();
-
-  // Schedule checks to run every 10 minutes
-  setInterval(async () => {
-    const currentTime = Date.now();
-    const timeSinceLastCheck = (currentTime - lastAssignmentCheckTime) / 1000; // Time in seconds
-
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    console.log(`   Guilds: ${client.guilds.cache.size}`);
+    
     try {
-      console.log(`Time since last assignment check: ${timeSinceLastCheck.toFixed(2)} seconds`);
-      await checkForNewAssignments(client);
-      console.log('Assignment check completed.');
-      lastAssignmentCheckTime = currentTime; // Update the last check time
+        // Ensure data file exists
+        await ensureDataFile();
+        console.log('✅ Data file initialized');
+        
+        // Initial assignment check
+        console.log('🔄 Running initial assignment check...');
+        await checkForNewAssignments(client);
+        console.log('✅ Initial assignment check completed');
+        
+        // Start reminder loop
+        await startReminderLoop(client);
+        
+        // Schedule periodic assignment checks
+        setInterval(async () => {
+            try {
+                console.log('🔄 Checking for new assignments...');
+                await checkForNewAssignments(client);
+                console.log('✅ Assignment check completed');
+            } catch (error) {
+                console.error('❌ Error during assignment check:', error);
+            }
+        }, TIMING.assignmentCheckInterval);
+        
+        console.log(`✅ Assignment check scheduled (interval: ${TIMING.assignmentCheckInterval / 60000} minutes)`);
+        console.log('🚀 Bot is ready!');
+        
     } catch (error) {
-      console.error('Error during assignment check:', error);
+        console.error('❌ Error during initialization:', error);
     }
-  }, 10 * 60 * 1000); // Every 5 seconds (update the interval as needed)
-
-  remindercheck(client).catch(err =>
-    console.error('Uncaught error in reminder check loop:', err)
-  );
 });
 
-client.on('interactionCreate', async (interaction) => {
-  // if (interaction.commandName === 'ping') {
-  //   handlePingCommand(interaction);
-  // }
+// Handle interactions (slash commands, autocomplete, buttons)
+client.on('interactionCreate', handleInteraction);
 
-  if (interaction.commandName === 'add-reminder') {
-    handleAddReminder(interaction);
-  }
-
-  if (interaction.isAutocomplete() && interaction.commandName === 'delete-reminder') {
-    delReminderAutocomplete(interaction);
-  }
-
-  if (interaction.isChatInputCommand() && interaction.commandName === 'delete-reminder') {
-    handleDelReminder(interaction);
-  }
+// Error handling
+client.on('error', (error) => {
+    console.error('Discord client error:', error);
 });
 
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled promise rejection:', error);
+});
+
+process.on('SIGINT', () => {
+    console.log('\n👋 Shutting down...');
+    client.destroy();
+    process.exit(0);
+});
+
+// Login to Discord
 client.login(DISCORD_TOKEN);

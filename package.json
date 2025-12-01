@@ -1,0 +1,39 @@
+{
+  "name": "canvas-notifier",
+  "version": "2.0.0",
+  "description": "Discord bot for Canvas LMS assignment notifications",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "start:auto": "node scripts/start.js",
+    "register": "node src/commands/registerCommands.js",
+    "lint": "eslint .",
+    "docker:build": "docker build -t canvas-notifier .",
+    "docker:run": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "keywords": [
+    "discord",
+    "canvas",
+    "lms",
+    "notifications",
+    "bot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "dotenv": "^16.4.5",
+    "string-strip-html": "^13.4.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "eslint": "^9.15.0",
+    "globals": "^15.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

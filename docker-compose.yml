@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  canvas-notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: canvas-notifier
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist assignment/reminder data
+      - canvas-data:/app/courses
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  canvas-data:
+    driver: local
