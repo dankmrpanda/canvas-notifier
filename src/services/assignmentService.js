@@ -2,15 +2,18 @@
  * Assignment Service
  * Handles checking for new/updated assignments and sending notifications
  * Creates assignment-specific roles and assigns them to course members
+ * Supports automatic course discovery from Canvas
  */
-import { COURSES } from '../../config.js';
+import { COURSES, AUTO_DISCOVER, GUILD_ID, setCourses, TIMING } from '../../config.js';
 import { fetchAssignmentsForCourse, transformAssignment, hasAssignmentChanged } from '../utils/canvasApi.js';
-import { loadCourseData, saveCourseData } from '../utils/dataStore.js';
+import { loadCourseData, saveCourseData, saveCourseConfigs, loadCourseConfigs } from '../utils/dataStore.js';
 import { createNewAssignmentMessage, createUpdatedAssignmentMessage } from '../utils/embedBuilder.js';
 import { 
     getOrCreateAssignmentRole, 
     assignRoleToCourseMembersSync
 } from '../utils/roleManager.js';
+import { setupGuildFromCanvas, verifyGuildSetup } from '../utils/guildSetup.js';
+import log from '../utils/logger.js';
 
 /**
  * Get channel with fallback to fetch if not in cache
@@ -19,18 +22,133 @@ import {
  * @returns {Promise<import('discord.js').Channel|null>} Channel or null
  */
 async function getChannel(client, channelId) {
+    if (!channelId) return null;
+    
     let channel = client.channels.cache.get(channelId);
     
     if (!channel) {
         try {
             channel = await client.channels.fetch(channelId);
         } catch (error) {
-            console.error(`Failed to fetch channel ${channelId}:`, error.message);
+            log.error(`Failed to fetch channel ${channelId}`, error);
             return null;
         }
     }
     
     return channel;
+}
+
+/**
+ * Initialize courses from Canvas (auto-discovery mode)
+ * Sets up roles, categories, and channels automatically
+ * @param {Client} client - Discord client
+ * @returns {Promise<boolean>} Success status
+ */
+export async function initializeCoursesFromCanvas(client) {
+    if (!AUTO_DISCOVER) {
+        log.info('Auto-discovery disabled, using manual course configuration');
+        return true;
+    }
+    
+    if (!GUILD_ID) {
+        log.error('GUILD_ID required for auto-discovery mode');
+        return false;
+    }
+    
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) {
+        try {
+            await client.guilds.fetch(GUILD_ID);
+        } catch (error) {
+            log.error(`Failed to fetch guild ${GUILD_ID}`, error);
+            return false;
+        }
+    }
+    
+    const targetGuild = client.guilds.cache.get(GUILD_ID);
+    if (!targetGuild) {
+        log.error(`Guild ${GUILD_ID} not found`);
+        return false;
+    }
+    
+    // Check for existing saved configuration
+    const savedConfigs = await loadCourseConfigs();
+    
+    if (savedConfigs && savedConfigs.length > 0) {
+        log.info('Found saved course configurations, verifying...');
+        
+        // Verify and repair if needed
+        const verifiedConfigs = await verifyGuildSetup(targetGuild, savedConfigs);
+        setCourses(verifiedConfigs);
+        await saveCourseConfigs(verifiedConfigs);
+        
+        log.info(`Loaded ${verifiedConfigs.length} courses from saved configuration`);
+        return true;
+    }
+    
+    // No saved config, run full setup
+    log.info('No saved configuration found, running full Canvas discovery...');
+    
+    try {
+        const courseConfigs = await setupGuildFromCanvas(targetGuild);
+        
+        if (courseConfigs.length === 0) {
+            log.info('No courses with assignments found in Canvas');
+            return true;
+        }
+        
+        // Update global COURSES and save to disk
+        setCourses(courseConfigs);
+        await saveCourseConfigs(courseConfigs);
+        
+        log.info(`Initialized ${courseConfigs.length} courses from Canvas`);
+        return true;
+    } catch (error) {
+        log.error('Failed to initialize courses from Canvas', error);
+        return false;
+    }
+}
+
+
+/**
+ * Refresh course list from Canvas
+ * Adds new courses, keeps existing ones
+ * @param {Client} client - Discord client
+ */
+export async function refreshCoursesFromCanvas(client) {
+    if (!AUTO_DISCOVER || !GUILD_ID) {
+        return;
+    }
+    
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) {
+        log.error('Guild not found for course refresh');
+        return;
+    }
+    
+    log.info('Refreshing course list from Canvas...');
+    
+    try {
+        const newConfigs = await setupGuildFromCanvas(guild);
+        
+        // Merge with existing configs (keep existing, add new)
+        const existingIds = new Set(COURSES.map(c => c.courseId));
+        const mergedConfigs = [...COURSES];
+        
+        for (const config of newConfigs) {
+            if (!existingIds.has(config.courseId)) {
+                mergedConfigs.push(config);
+                log.info(`Added new course: ${config.courseCode}`);
+            }
+        }
+        
+        setCourses(mergedConfigs);
+        await saveCourseConfigs(mergedConfigs);
+        
+        log.info(`Course refresh complete. Total courses: ${mergedConfigs.length}`);
+    } catch (error) {
+        log.error('Failed to refresh courses', error);
+    }
 }
 
 /**
@@ -44,30 +162,30 @@ async function checkCourseAssignments(client, courseConfig) {
     const channel = await getChannel(client, channelId);
     
     if (!channel) {
-        console.error(`Channel not found for course ${courseId}. Check channelId: ${channelId}`);
+        log.error(`Channel not found for course ${courseId}. Check channelId: ${channelId}`);
         return;
     }
     
     if (!channel.isTextBased()) {
-        console.error(`Channel ${channelId} is not a text channel.`);
+        log.error(`Channel ${channelId} is not a text channel.`);
         return;
     }
     
     const guild = channel.guild;
     if (!guild) {
-        console.error(`Could not get guild from channel ${channelId}`);
+        log.error(`Could not get guild from channel ${channelId}`);
         return;
     }
     
     const canvasAssignments = await fetchAssignmentsForCourse(courseId);
     
     if (!Array.isArray(canvasAssignments)) {
-        console.error(`Invalid response from Canvas API for course ${courseId}`);
+        log.error(`Invalid response from Canvas API for course ${courseId}`);
         return;
     }
     
     if (canvasAssignments.length === 0) {
-        console.log(`No upcoming assignments for course ${courseId}`);
+        log.debug(`No upcoming assignments for course ${courseId}`);
         return;
     }
     
@@ -93,16 +211,16 @@ async function checkCourseAssignments(client, courseConfig) {
     
     // Delete roles for removed assignments
     for (const assignment of assignmentsToRemove) {
-        console.log(`[Course ${courseId}] Removing: ${assignment.name}`);
+        log.assignment(courseId, 'Removing', assignment.name);
         if (assignment.roleId) {
             try {
                 const role = guild.roles.cache.get(assignment.roleId);
                 if (role) {
                     await role.delete('Assignment completed or removed');
-                    console.log(`[Course ${courseId}] Deleted role for: ${assignment.name}`);
+                    log.assignment(courseId, 'Deleted role for', assignment.name);
                 }
             } catch (error) {
-                console.error(`Failed to delete role:`, error.message);
+                log.error(`Failed to delete role`, error);
             }
         }
     }
@@ -130,7 +248,7 @@ async function checkCourseAssignments(client, courseConfig) {
             const existing = data.assignments[existingIndex];
             
             if (hasAssignmentChanged(existing, canvasAssignment)) {
-                console.log(`[Course ${courseId}] Assignment updated: ${canvasAssignment.name}`);
+                log.assignment(courseId, 'Updated', canvasAssignment.name);
                 
                 const oldDeadline = existing.deadline ? new Date(existing.deadline).getTime() : 0;
                 const newDeadline = new Date(canvasAssignment.due_at).getTime();
@@ -154,13 +272,15 @@ async function checkCourseAssignments(client, courseConfig) {
                         embeds: [embed],
                         components
                     });
+                    
+                    log.discord('messageSend', `Sent update notification for ${canvasAssignment.name}`, { courseId, channelId });
                 } catch (error) {
-                    console.error(`[Course ${courseId}] Failed to send update notification:`, error.message);
+                    log.error(`[Course ${courseId}] Failed to send update notification`, error);
                 }
             }
         } else {
             // New assignment
-            console.log(`[Course ${courseId}] New assignment: ${canvasAssignment.name}`);
+            log.assignment(courseId, 'New', canvasAssignment.name);
             
             const newAssignment = transformAssignment(canvasAssignment, courseId);
             
@@ -189,8 +309,10 @@ async function checkCourseAssignments(client, courseConfig) {
                     embeds: [embed],
                     components
                 });
+                
+                log.discord('messageSend', `Sent new assignment notification for ${canvasAssignment.name}`, { courseId, channelId });
             } catch (error) {
-                console.error(`[Course ${courseId}] Failed to send notification:`, error.message);
+                log.error(`[Course ${courseId}] Failed to send notification`, error);
             }
         }
     }
@@ -203,13 +325,38 @@ async function checkCourseAssignments(client, courseConfig) {
  * @param {Client} client - Discord client instance
  */
 export async function checkForNewAssignments(client) {
+    if (COURSES.length === 0) {
+        log.debug('No courses configured, skipping assignment check');
+        return;
+    }
+    
     for (const courseConfig of COURSES) {
         try {
             await checkCourseAssignments(client, courseConfig);
         } catch (error) {
-            console.error(`Error checking course ${courseConfig.courseId}:`, error.message);
+            log.error(`Error checking course ${courseConfig.courseId}`, error);
         }
     }
+}
+
+/**
+ * Start the course refresh loop (for auto-discovery mode)
+ * @param {Client} client - Discord client
+ */
+export function startCourseRefreshLoop(client) {
+    if (!AUTO_DISCOVER) {
+        return;
+    }
+    
+    setInterval(async () => {
+        try {
+            await refreshCoursesFromCanvas(client);
+        } catch (error) {
+            log.error('Error during course refresh', error);
+        }
+    }, TIMING.courseRefreshInterval);
+    
+    log.info(`Course refresh scheduled (interval: ${TIMING.courseRefreshInterval / 60000} minutes)`);
 }
 
 export { checkCourseAssignments };

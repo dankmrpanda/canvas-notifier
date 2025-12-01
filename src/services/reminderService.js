@@ -10,6 +10,7 @@ import {
     createCustomReminderEmbed,
     getReminderLabel
 } from '../utils/embedBuilder.js';
+import log from '../utils/logger.js';
 
 /**
  * Get channel with fallback to fetch if not in cache
@@ -24,7 +25,7 @@ async function getChannel(client, channelId) {
         try {
             channel = await client.channels.fetch(channelId);
         } catch (error) {
-            console.error(`Failed to fetch channel ${channelId}:`, error.message);
+            log.error(`Failed to fetch channel ${channelId}`, error);
             return null;
         }
     }
@@ -100,12 +101,12 @@ async function checkCourseAssignmentReminders(client, courseConfig) {
                 components
             });
 
-            console.log(`[Course ${courseId}] Reminder sent: ${label} for "${assignment.name}"`);
+            log.reminder('assignment', `Sent: ${label} for "${assignment.name}"`, { courseId, assignmentId: assignment.id });
 
             data.assignments[i].remindersSent.push(reminderKey);
             hasChanges = true;
         } catch (error) {
-            console.error(`[Course ${courseId}] Failed to send reminder:`, error.message);
+            log.error(`[Course ${courseId}] Failed to send reminder`, error);
         }
     }
 
@@ -119,11 +120,15 @@ async function checkCourseAssignmentReminders(client, courseConfig) {
  * @param {Client} client - Discord client instance
  */
 export async function checkAssignmentReminders(client) {
+    if (!COURSES || COURSES.length === 0) {
+        return; // No courses configured yet
+    }
+    
     for (const courseConfig of COURSES) {
         try {
             await checkCourseAssignmentReminders(client, courseConfig);
         } catch (error) {
-            console.error(`Error checking reminders for course ${courseConfig.courseId}:`, error.message);
+            log.error(`Error checking reminders for course ${courseConfig.courseId}`, error);
         }
     }
 }
@@ -133,6 +138,10 @@ export async function checkAssignmentReminders(client) {
  * @param {Client} client - Discord client instance
  */
 export async function checkCustomReminders(client) {
+    if (!COURSES || COURSES.length === 0) {
+        return; // No courses configured yet
+    }
+    
     const defaultConfig = COURSES[0];
     if (!defaultConfig) {
         return;
@@ -203,7 +212,7 @@ export async function checkCustomReminders(client) {
                 embeds: [embed]
             });
 
-            console.log(`Custom reminder sent: ${label} for "${reminder.title}"`);
+            log.reminder('custom', `Sent: ${label} for "${reminder.title}"`, { userId: reminder.userId });
 
             if (reminderKey === 0) {
                 indicesToRemove.add(i);
@@ -212,7 +221,7 @@ export async function checkCustomReminders(client) {
             }
             hasChanges = true;
         } catch (error) {
-            console.error(`Failed to send custom reminder: ${reminder.title}`, error.message);
+            log.error(`Failed to send custom reminder: ${reminder.title}`, error);
         }
     }
 
@@ -239,7 +248,7 @@ export async function startReminderLoop(client) {
             await checkAssignmentReminders(client);
             await checkCustomReminders(client);
         } catch (error) {
-            console.error('Error during reminder check:', error.message);
+            log.error('Error during reminder check', error);
         }
     };
 
@@ -247,5 +256,5 @@ export async function startReminderLoop(client) {
 
     setInterval(checkReminders, TIMING.reminderCheckInterval);
 
-    console.log(`✅ Reminder check loop started (interval: ${TIMING.reminderCheckInterval / 1000}s)`);
+    log.info(`Reminder check loop started (interval: ${TIMING.reminderCheckInterval / 1000}s)`);
 }
