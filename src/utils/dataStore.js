@@ -1,10 +1,10 @@
 /**
  * Unified Data Store
  * Handles all JSON file operations for assignments, reminders, and user preferences
- * Supports multiple courses with separate data files
+ * Supports multiple courses with separate data files and dynamic configuration
  */
 import fs from 'fs/promises';
-import { DATA_DIR, getDataFilePath, COURSES } from '../../config.js';
+import { DATA_DIR, CONFIG_FILE, getDataFilePath, COURSES, setCourses } from '../../config.js';
 
 // Default data structure
 const DEFAULT_DATA = {
@@ -12,6 +12,66 @@ const DEFAULT_DATA = {
     reminders: [],
     users: []
 };
+
+// =============================================================================
+// CONFIGURATION PERSISTENCE
+// =============================================================================
+
+/**
+ * Save course configurations to disk
+ * Used to persist auto-discovered courses
+ * @param {Array} courseConfigs - Array of course configurations
+ */
+export async function saveCourseConfigs(courseConfigs) {
+    try {
+        await fs.mkdir(DATA_DIR, { recursive: true });
+        await fs.writeFile(CONFIG_FILE, JSON.stringify(courseConfigs, null, 2));
+        console.log(`Saved ${courseConfigs.length} course configurations`);
+    } catch (error) {
+        console.error('Error saving course configs:', error);
+        throw error;
+    }
+}
+
+/**
+ * Load course configurations from disk
+ * @returns {Promise<Array|null>} Course configurations or null if not found
+ */
+export async function loadCourseConfigs() {
+    try {
+        const content = await fs.readFile(CONFIG_FILE, 'utf-8');
+        const configs = JSON.parse(content);
+        
+        if (Array.isArray(configs)) {
+            console.log(`Loaded ${configs.length} course configurations from disk`);
+            return configs;
+        }
+        
+        return null;
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return null; // File doesn't exist yet
+        }
+        console.error('Error loading course configs:', error);
+        return null;
+    }
+}
+
+/**
+ * Initialize courses from saved config or return empty
+ * Updates the global COURSES array
+ * @returns {Promise<Array>} Course configurations
+ */
+export async function initializeCourseConfigs() {
+    const savedConfigs = await loadCourseConfigs();
+    
+    if (savedConfigs && savedConfigs.length > 0) {
+        setCourses(savedConfigs);
+        return savedConfigs;
+    }
+    
+    return COURSES;
+}
 
 // =============================================================================
 // MULTI-COURSE DATA OPERATIONS
@@ -95,6 +155,7 @@ export async function saveCourseData(courseId, data) {
     const filePath = getDataFilePath(courseId);
     
     try {
+        await fs.mkdir(DATA_DIR, { recursive: true });
         await fs.writeFile(filePath, JSON.stringify(data, null, 2));
     } catch (error) {
         console.error(`Error saving data file for course ${courseId}:`, error);
@@ -106,24 +167,26 @@ export async function saveCourseData(courseId, data) {
 // LEGACY SINGLE-COURSE OPERATIONS (for backward compatibility)
 // =============================================================================
 
-const defaultCourseId = COURSES[0]?.courseId;
+const getDefaultCourseId = () => COURSES[0]?.courseId;
 
 export async function ensureDataFile() {
     return ensureDataFiles();
 }
 
 export async function loadData() {
-    if (!defaultCourseId) {
+    const courseId = getDefaultCourseId();
+    if (!courseId) {
         return { ...DEFAULT_DATA };
     }
-    return loadCourseData(defaultCourseId);
+    return loadCourseData(courseId);
 }
 
 export async function saveData(data) {
-    if (!defaultCourseId) {
+    const courseId = getDefaultCourseId();
+    if (!courseId) {
         throw new Error('No course configured');
     }
-    return saveCourseData(defaultCourseId, data);
+    return saveCourseData(courseId, data);
 }
 
 // =============================================================================
