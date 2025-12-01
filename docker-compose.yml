@@ -7,11 +7,13 @@ services:
       dockerfile: Dockerfile
     container_name: canvas-notifier
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     env_file:
       - .env
     volumes:
-      # Persist assignment/reminder data
-      - canvas-data:/app/courses
+      # Persist assignment/reminder data to local project folders
+      - ./courses:/app/courses
+      - ./logs:/app/logs
     environment:
       - NODE_ENV=production
     logging:
@@ -19,7 +21,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  canvas-data:
-    driver: local

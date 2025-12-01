@@ -19,9 +19,10 @@ RUN npm ci --only=production && \
 # Copy application source
 COPY --chown=nodejs:nodejs . .
 
-# Create data directory for persistent storage
-RUN mkdir -p /app/courses && \
-    chown -R nodejs:nodejs /app/courses
+# Create data directories for persistent storage (after COPY to ensure they exist)
+# These directories will be mounted as volumes in docker-compose
+RUN mkdir -p /app/courses /app/logs && \
+    chown -R nodejs:nodejs /app/courses /app/logs
 
 # Switch to non-root user
 USER nodejs

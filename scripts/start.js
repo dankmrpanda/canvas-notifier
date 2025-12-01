@@ -2,9 +2,32 @@
  * Startup Script
  * Registers slash commands and then starts the bot
  */
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { REST, Routes } from 'discord.js';
-import { DISCORD_TOKEN, CLIENT_ID, validateConfig, COURSES } from '../config.js';
+import { DISCORD_TOKEN, CLIENT_ID, validateConfig } from '../config.js';
 import { commands } from '../src/commands/registerCommands.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Ensure required directories exist at runtime
+ * This handles Docker volume mounts that may override build-time directories
+ */
+function ensureDirectories() {
+    const dirs = [
+        path.resolve(__dirname, '../logs'),
+        path.resolve(__dirname, '../courses')
+    ];
+    
+    for (const dir of dirs) {
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log(`📁 Created directory: ${dir}`);
+        }
+    }
+}
 
 async function registerCommands() {
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -28,6 +51,9 @@ async function registerCommands() {
 
 async function main() {
     console.log('🚀 Canvas Notifier Bot Starting...\n');
+    
+    // Ensure required directories exist (handles Docker volume mounts)
+    ensureDirectories();
     
     // Validate configuration
     if (!validateConfig()) {

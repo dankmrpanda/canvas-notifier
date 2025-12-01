@@ -1,7 +1,7 @@
 /**
  * Canvas Notifier Bot Configuration
  * Central configuration file for all bot settings
- * Supports multiple courses with individual channel/role mappings
+ * Supports automatic course discovery from Canvas
  */
 import dotenv from 'dotenv';
 import path from 'path';
@@ -19,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 export const CLIENT_ID = process.env.CLIENT_ID;
 export const CANVAS_TOKEN = process.env.CANVAS_TOKEN;
+export const GUILD_ID = process.env.GUILD_ID; // Required for auto-setup
 
 // =============================================================================
 // CANVAS API CONFIGURATION
@@ -30,12 +31,26 @@ export const CANVAS_CONFIG = {
 };
 
 // =============================================================================
-// MULTI-COURSE CONFIGURATION
+// AUTO-DISCOVERY MODE
+// =============================================================================
+
+/**
+ * When AUTO_DISCOVER is true, the bot will:
+ * 1. Fetch all courses from Canvas automatically
+ * 2. Create roles based on Section.name (numbers before first dash)
+ * 3. Create categories based on Term.name
+ * 4. Create channels with the same name as roles
+ * 5. Only create channels for courses with assignments
+ */
+export const AUTO_DISCOVER = process.env.AUTO_DISCOVER !== 'false'; // Default true
+
+// =============================================================================
+// MULTI-COURSE CONFIGURATION (Manual mode fallback)
 // =============================================================================
 
 /**
  * Parse course configurations from environment variables
- * Supports two formats:
+ * Used when AUTO_DISCOVER is false
  * 
  * Format 1 (Single course - legacy):
  *   COURSE_ID=12345
@@ -82,9 +97,33 @@ function parseCourseConfigs() {
 
 /**
  * Array of course configurations
- * Each course has: courseId, channelId, roleId
+ * This will be populated dynamically in auto-discover mode
+ * or from environment variables in manual mode
  */
-export const COURSES = parseCourseConfigs();
+export let COURSES = parseCourseConfigs();
+
+/**
+ * Update the courses configuration dynamically
+ * Used by auto-discovery to set courses at runtime
+ * @param {Array} newCourses - New course configurations
+ */
+export function setCourses(newCourses) {
+    COURSES = newCourses;
+}
+
+/**
+ * Add a course to the configuration
+ * @param {Object} course - Course configuration
+ */
+export function addCourse(course) {
+    // Check if course already exists
+    const existing = COURSES.findIndex(c => c.courseId === course.courseId);
+    if (existing >= 0) {
+        COURSES[existing] = course;
+    } else {
+        COURSES.push(course);
+    }
+}
 
 // Legacy single-course exports (for backward compatibility)
 export const COURSE_ID = COURSES[0]?.courseId;
@@ -98,7 +137,8 @@ export const ROLE_ID = COURSES[0]?.roleId;
 export const TIMING = {
     assignmentCheckInterval: 10 * 60 * 1000,  // 10 minutes
     reminderCheckInterval: 60 * 1000,          // 1 minute
-    customReminderCheckInterval: 60 * 1000     // 1 minute
+    customReminderCheckInterval: 60 * 1000,    // 1 minute
+    courseRefreshInterval: 60 * 60 * 1000      // 1 hour - refresh course list
 };
 
 // =============================================================================
@@ -147,6 +187,7 @@ export const COLORS = {
 // =============================================================================
 
 export const DATA_DIR = path.resolve(__dirname, 'courses');
+export const CONFIG_FILE = path.resolve(DATA_DIR, '_config.json');
 
 /**
  * Get the data file path for a specific course
@@ -181,25 +222,30 @@ export function validateConfig() {
         return false;
     }
     
-    // Check for course configuration
-    if (COURSES.length === 0) {
-        console.error('No courses configured. Set COURSES or COURSE_ID/CHANNEL_ID in .env');
+    // In auto-discover mode, we need GUILD_ID
+    if (AUTO_DISCOVER && !GUILD_ID) {
+        console.error('AUTO_DISCOVER mode requires GUILD_ID in .env');
+        console.error('Set GUILD_ID to your Discord server ID, or set AUTO_DISCOVER=false');
         return false;
     }
     
-    // Validate each course has required fields
-    for (let i = 0; i < COURSES.length; i++) {
-        const course = COURSES[i];
-        if (!course.courseId || !course.channelId) {
-            console.error(`Course ${i + 1} is missing courseId or channelId`);
-            return false;
-        }
+    // In manual mode, check for course configuration
+    if (!AUTO_DISCOVER && COURSES.length === 0) {
+        console.error('No courses configured. Set COURSES or COURSE_ID/CHANNEL_ID in .env');
+        console.error('Or enable AUTO_DISCOVER mode with GUILD_ID');
+        return false;
     }
     
-    console.log(`✅ Configured ${COURSES.length} course(s):`);
-    COURSES.forEach((c, i) => {
-        console.log(`   ${i + 1}. Course ${c.courseId} → Channel ${c.channelId}${c.roleId ? ` (Role: ${c.roleId})` : ''}`);
-    });
+    if (AUTO_DISCOVER) {
+        console.log('✅ Auto-discovery mode enabled');
+        console.log(`   Guild ID: ${GUILD_ID}`);
+        console.log('   Courses will be discovered from Canvas automatically');
+    } else {
+        console.log(`✅ Manual mode - Configured ${COURSES.length} course(s):`);
+        COURSES.forEach((c, i) => {
+            console.log(`   ${i + 1}. Course ${c.courseId} → Channel ${c.channelId}${c.roleId ? ` (Role: ${c.roleId})` : ''}`);
+        });
+    }
     
     return true;
 }
