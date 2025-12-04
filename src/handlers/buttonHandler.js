@@ -17,10 +17,11 @@ export async function handleAssignmentButton(interaction) {
     const parts = customId.split(':');
     
     if (parts.length < 3) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ Invalid button data.',
             ephemeral: true
         });
+        return;
     }
     
     const action = parts[0]; // 'assignment_done' or 'assignment_undone'
@@ -32,10 +33,11 @@ export async function handleAssignmentButton(interaction) {
     const member = interaction.member;
     
     if (!guild || !member) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ This button only works in a server.',
             ephemeral: true
         });
+        return;
     }
     
     // Load course data to find the assignment
@@ -43,37 +45,41 @@ export async function handleAssignmentButton(interaction) {
     const assignment = data.assignments.find(a => String(a.id) === String(assignmentId));
     
     if (!assignment) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ Assignment not found. It may have been removed.',
             ephemeral: true
         });
+        return;
     }
     
     if (!assignment.roleId) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ No role associated with this assignment.',
             ephemeral: true
         });
+        return;
     }
     
     // Get the assignment role
     const role = guild.roles.cache.get(assignment.roleId);
     
     if (!role) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ Assignment role not found. It may have been deleted.',
             ephemeral: true
         });
+        return;
     }
     
     // Handle the action
     if (action === 'assignment_done') {
         // Check if user has the role
         if (!member.roles.cache.has(role.id)) {
-            return interaction.reply({
+            await interaction.reply({
                 content: `ℹ️ You've already marked "${assignment.name}" as done.`,
                 ephemeral: true
             });
+            return;
         }
         
         // Remove the role
@@ -81,24 +87,26 @@ export async function handleAssignmentButton(interaction) {
         
         if (success) {
             log.button(customId, member.user.id, `Marked "${assignment.name}" as done`);
-            return interaction.reply({
+            await interaction.reply({
                 content: `✅ Marked "${assignment.name}" as done! You won't receive further reminders for this assignment.`,
                 ephemeral: true
             });
         } else {
             log.button(customId, member.user.id, `Failed to mark "${assignment.name}" as done`);
-            return interaction.reply({
+            await interaction.reply({
                 content: '❌ Failed to update your status. Please try again.',
                 ephemeral: true
             });
         }
+        return;
     } else if (action === 'assignment_undone') {
         // Check if user already has the role
         if (member.roles.cache.has(role.id)) {
-            return interaction.reply({
+            await interaction.reply({
                 content: `ℹ️ "${assignment.name}" is already marked as not done.`,
                 ephemeral: true
             });
+            return;
         }
         
         // Add the role back
@@ -106,20 +114,21 @@ export async function handleAssignmentButton(interaction) {
         
         if (success) {
             log.button(customId, member.user.id, `Marked "${assignment.name}" as not done`);
-            return interaction.reply({
+            await interaction.reply({
                 content: `🔄 Marked "${assignment.name}" as not done. You'll receive reminders again.`,
                 ephemeral: true
             });
         } else {
             log.button(customId, member.user.id, `Failed to mark "${assignment.name}" as not done`);
-            return interaction.reply({
+            await interaction.reply({
                 content: '❌ Failed to update your status. Please try again.',
                 ephemeral: true
             });
         }
+        return;
     }
     
-    return interaction.reply({
+    await interaction.reply({
         content: '❌ Unknown action.',
         ephemeral: true
     });
@@ -135,10 +144,11 @@ export async function handleCourseRoleToggle(interaction) {
     const parts = customId.split(':');
     
     if (parts.length < 3) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ Invalid button data.',
             ephemeral: true
         });
+        return;
     }
     
     const courseId = parts[1];
@@ -148,20 +158,22 @@ export async function handleCourseRoleToggle(interaction) {
     const member = interaction.member;
     
     if (!guild || !member) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ This button only works in a server.',
             ephemeral: true
         });
+        return;
     }
     
     // Get the course role
     const courseRole = guild.roles.cache.get(roleId);
     
     if (!courseRole) {
-        return interaction.reply({
+        await interaction.reply({
             content: '❌ Course role not found. It may have been deleted.',
             ephemeral: true
         });
+        return;
     }
     
     // Find course config

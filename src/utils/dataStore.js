@@ -13,6 +13,29 @@ const DEFAULT_DATA = {
     users: []
 };
 
+// Simple in-memory lock to prevent concurrent writes to the same file
+const fileLocks = new Map();
+
+/**
+ * Acquire a lock for a file path
+ * @param {string} filePath - Path to lock
+ * @returns {Promise<void>}
+ */
+async function acquireLock(filePath) {
+    while (fileLocks.get(filePath)) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    fileLocks.set(filePath, true);
+}
+
+/**
+ * Release a lock for a file path
+ * @param {string} filePath - Path to unlock
+ */
+function releaseLock(filePath) {
+    fileLocks.delete(filePath);
+}
+
 // =============================================================================
 // CONFIGURATION PERSISTENCE
 // =============================================================================
@@ -23,6 +46,7 @@ const DEFAULT_DATA = {
  * @param {Array} courseConfigs - Array of course configurations
  */
 export async function saveCourseConfigs(courseConfigs) {
+    await acquireLock(CONFIG_FILE);
     try {
         await fs.mkdir(DATA_DIR, { recursive: true });
         await fs.writeFile(CONFIG_FILE, JSON.stringify(courseConfigs, null, 2));
@@ -30,6 +54,8 @@ export async function saveCourseConfigs(courseConfigs) {
     } catch (error) {
         console.error('Error saving course configs:', error);
         throw error;
+    } finally {
+        releaseLock(CONFIG_FILE);
     }
 }
 
@@ -154,12 +180,15 @@ export async function loadCourseData(courseId) {
 export async function saveCourseData(courseId, data) {
     const filePath = getDataFilePath(courseId);
     
+    await acquireLock(filePath);
     try {
         await fs.mkdir(DATA_DIR, { recursive: true });
         await fs.writeFile(filePath, JSON.stringify(data, null, 2));
     } catch (error) {
         console.error(`Error saving data file for course ${courseId}:`, error);
         throw error;
+    } finally {
+        releaseLock(filePath);
     }
 }
 

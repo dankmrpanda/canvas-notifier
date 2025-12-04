@@ -129,7 +129,7 @@ export async function refreshCoursesFromCanvas(client) {
     log.info('Refreshing course list from Canvas...');
     
     try {
-        const newConfigs = await setupGuildFromCanvas(guild);
+        const newConfigs = await setupGuildFromCanvas(guild, { sendRoleEmbeds: false });
         
         // Merge with existing configs (keep existing, add new)
         const existingIds = new Set(COURSES.map(c => c.courseId));
@@ -209,9 +209,22 @@ async function checkCourseAssignments(client, courseConfig) {
         return false;
     });
     
-    // Delete roles for removed assignments
+    // Delete roles and messages for removed assignments
     for (const assignment of assignmentsToRemove) {
         log.assignment(courseId, 'Removing', assignment.name);
+        
+        // Delete the message for this assignment
+        if (assignment.messageId) {
+            try {
+                const message = await channel.messages.fetch(assignment.messageId);
+                await message.delete();
+                log.assignment(courseId, 'Deleted message', `${assignment.messageId} for "${assignment.name}"`);
+            } catch (error) {
+                log.error(`Failed to delete message ${assignment.messageId}`, error);
+            }
+        }
+        
+        // Delete the role
         if (assignment.roleId) {
             try {
                 const role = guild.roles.cache.get(assignment.roleId);
@@ -262,16 +275,30 @@ async function checkCourseAssignments(client, courseConfig) {
                 };
                 
                 try {
+                    // Delete previous message if it exists
+                    if (existing.messageId) {
+                        try {
+                            const oldMessage = await channel.messages.fetch(existing.messageId);
+                            await oldMessage.delete();
+                            log.assignment(courseId, 'Deleted previous message for', canvasAssignment.name);
+                        } catch (error) {
+                            log.error(`Failed to delete previous message ${existing.messageId}`, error);
+                        }
+                    }
+                    
                     const { embed, components } = createUpdatedAssignmentMessage(data.assignments[existingIndex]);
                     
                     // Ping the assignment role if it exists
                     const rolePing = existing.roleId ? `<@&${existing.roleId}> ` : '';
                     
-                    await channel.send({
+                    const message = await channel.send({
                         content: `${rolePing}📝 Assignment "${canvasAssignment.name}" has been updated!`,
                         embeds: [embed],
                         components
                     });
+                    
+                    // Store only the latest message ID
+                    data.assignments[existingIndex].messageId = message.id;
                     
                     log.discord('messageSend', `Sent update notification for ${canvasAssignment.name}`, { courseId, channelId });
                 } catch (error) {
@@ -304,11 +331,14 @@ async function checkCourseAssignments(client, courseConfig) {
                 // Ping the assignment role (not the course role)
                 const rolePing = assignmentRole ? `<@&${assignmentRole.id}> ` : '';
                 
-                await channel.send({
+                const message = await channel.send({
                     content: `${rolePing}📚 A new assignment has been posted!`,
                     embeds: [embed],
                     components
                 });
+                
+                // Store only the latest message ID
+                newAssignment.messageId = message.id;
                 
                 log.discord('messageSend', `Sent new assignment notification for ${canvasAssignment.name}`, { courseId, channelId });
             } catch (error) {

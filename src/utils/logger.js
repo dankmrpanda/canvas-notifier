@@ -25,6 +25,9 @@ const LOG_LEVELS = {
 // Current log level (can be set via environment variable)
 const currentLevel = LOG_LEVELS[process.env.LOG_LEVEL?.toUpperCase()] ?? LOG_LEVELS.INFO;
 
+// Track if logging to file is enabled
+let fileLoggingEnabled = true;
+
 // Ensure log directory exists
 try {
     if (!fs.existsSync(LOG_DIR)) {
@@ -32,6 +35,7 @@ try {
     }
 } catch (err) {
     console.error('Failed to create log directory:', err.message);
+    fileLoggingEnabled = false;
 }
 
 // Initialize log file with session header
@@ -47,11 +51,14 @@ Log Level: ${Object.keys(LOG_LEVELS).find(k => LOG_LEVELS[k] === currentLevel) |
 
 `;
 
-try {
-    fs.writeFileSync(LOG_FILE, sessionHeader);
-    console.log(`Log file created: ${LOG_FILE}`);
-} catch (error) {
-    console.error('Failed to initialize log file:', error.message);
+if (fileLoggingEnabled) {
+    try {
+        fs.writeFileSync(LOG_FILE, sessionHeader);
+        console.log(`Log file created: ${LOG_FILE}`);
+    } catch (error) {
+        console.error('Failed to initialize log file:', error.message);
+        fileLoggingEnabled = false;
+    }
 }
 
 /**
@@ -88,6 +95,8 @@ function formatData(data) {
  * @param {Object} data - Additional data to log
  */
 function writeToFile(level, message, data = null) {
+    if (!fileLoggingEnabled) return;
+    
     const timestamp = getTimestamp();
     const paddedLevel = level.padEnd(5);
     let logLine = `[${timestamp}] [${paddedLevel}] ${message}`;
@@ -101,7 +110,11 @@ function writeToFile(level, message, data = null) {
     try {
         fs.appendFileSync(LOG_FILE, logLine);
     } catch (error) {
-        console.error('Failed to write to log file:', error.message);
+        // Only log once to avoid spam
+        if (fileLoggingEnabled) {
+            console.error('Failed to write to log file:', error.message);
+            fileLoggingEnabled = false;
+        }
     }
 }
 
@@ -249,6 +262,8 @@ export function button(buttonId, userId, result) {
  * @param {string} title - Section title
  */
 export function section(title) {
+    if (!fileLoggingEnabled) return;
+    
     const line = '-'.repeat(60);
     const entry = `\n${line}\n${title}\n${line}\n`;
     try {

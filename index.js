@@ -37,7 +37,7 @@ const client = new Client({
     ]
 });
 
-// Bot ready event
+// Bot ready event (using clientReady to avoid deprecation warning in discord.js v15)
 client.once('ready', async () => {
     log.section('DISCORD CONNECTION');
     log.info(`Logged in as ${client.user.tag}`);

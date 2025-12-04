@@ -70,7 +70,7 @@ async function checkCourseAssignmentReminders(client, courseConfig) {
 
         const hoursLeft = (deadline - now) / (1000 * 60 * 60);
 
-        if (hoursLeft <= 0 || hoursLeft > 24) {
+        if (hoursLeft <= 0) {
             continue;
         }
 
@@ -89,13 +89,24 @@ async function checkCourseAssignmentReminders(client, courseConfig) {
         }
 
         try {
+            // Delete previous message if it exists
+            if (data.assignments[i].messageId) {
+                try {
+                    const oldMessage = await channel.messages.fetch(data.assignments[i].messageId);
+                    await oldMessage.delete();
+                    log.reminder('assignment', `Deleted previous message for "${assignment.name}"`, { courseId, assignmentId: assignment.id });
+                } catch (error) {
+                    log.error(`Failed to delete previous message ${data.assignments[i].messageId}`, error);
+                }
+            }
+            
             const { embed, components } = createAssignmentReminderMessage(assignment, hoursLeft);
             const label = getReminderLabel(reminderKey, 'assignment');
             
             // Ping the assignment role (only users who haven't marked done)
             const rolePing = assignment.roleId ? `<@&${assignment.roleId}> ` : '';
 
-            await channel.send({
+            const message = await channel.send({
                 content: `${rolePing}⏰ ${label}!`,
                 embeds: [embed],
                 components
@@ -103,6 +114,8 @@ async function checkCourseAssignmentReminders(client, courseConfig) {
 
             log.reminder('assignment', `Sent: ${label} for "${assignment.name}"`, { courseId, assignmentId: assignment.id });
 
+            // Store only the latest message ID
+            data.assignments[i].messageId = message.id;
             data.assignments[i].remindersSent.push(reminderKey);
             hasChanges = true;
         } catch (error) {
@@ -143,12 +156,14 @@ export async function checkCustomReminders(client) {
     }
     
     const defaultConfig = COURSES[0];
-    if (!defaultConfig) {
+    if (!defaultConfig || !defaultConfig.channelId) {
+        log.debug('No default channel configured for custom reminders');
         return;
     }
 
     const channel = await getChannel(client, defaultConfig.channelId);
     if (!channel) {
+        log.debug(`Custom reminder channel ${defaultConfig.channelId} not found`);
         return;
     }
 

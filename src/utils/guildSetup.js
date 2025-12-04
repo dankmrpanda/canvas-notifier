@@ -333,9 +333,11 @@ async function setupRoleSelectionEmbeds(rolesChannel, coursesInTerm) {
  * and role selection channels
  * 
  * @param {Guild} guild - Discord guild
+ * @param {Object} options - Setup options
+ * @param {boolean} options.sendRoleEmbeds - Whether to send role selection embeds (default: true)
  * @returns {Promise<Array>} Array of course configurations with Discord IDs
  */
-export async function setupGuildFromCanvas(guild) {
+export async function setupGuildFromCanvas(guild, { sendRoleEmbeds = true } = {}) {
     log.info('Fetching courses from Canvas...');
     
     const courses = await fetchCoursesWithAssignments();
@@ -391,14 +393,16 @@ export async function setupGuildFromCanvas(guild) {
         }
     }
     
-    // Second pass: create role selection channels for each term
-    for (const [termName, coursesInTerm] of termCourses) {
-        const category = categoryCache.get(termName);
-        if (!category) continue;
-        
-        const rolesChannel = await getOrCreateRolesChannel(guild, category);
-        if (rolesChannel) {
-            await setupRoleSelectionEmbeds(rolesChannel, coursesInTerm);
+    // Second pass: create role selection channels for each term (only on initial setup)
+    if (sendRoleEmbeds) {
+        for (const [termName, coursesInTerm] of termCourses) {
+            const category = categoryCache.get(termName);
+            if (!category) continue;
+            
+            const rolesChannel = await getOrCreateRolesChannel(guild, category);
+            if (rolesChannel) {
+                await setupRoleSelectionEmbeds(rolesChannel, coursesInTerm);
+            }
         }
     }
     

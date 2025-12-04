@@ -52,6 +52,12 @@ export async function getOrCreateAssignmentRole(guild, assignment) {
 }
 
 /**
+ * Delay helper for rate limiting
+ * @param {number} ms - Milliseconds to wait
+ */
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
  * Assign a role to all members who have the course role
  * @param {Guild} guild - Discord guild
  * @param {Role} assignmentRole - The assignment role to give
@@ -78,7 +84,7 @@ export async function assignRoleToCourseMembersSync(guild, assignmentRole, cours
         // Get all members with the course role
         const membersWithCourseRole = courseRole.members;
         
-        for (const [memberId, member] of membersWithCourseRole) {
+        for (const [, member] of membersWithCourseRole) {
             // Skip if already has the assignment role
             if (member.roles.cache.has(assignmentRole.id)) {
                 continue;
@@ -87,6 +93,8 @@ export async function assignRoleToCourseMembersSync(guild, assignmentRole, cours
             try {
                 await member.roles.add(assignmentRole, 'New assignment posted');
                 assignedCount++;
+                // Rate limit protection - Discord allows 10 requests per 10 seconds for role changes
+                await delay(200);
             } catch (error) {
                 console.error(`Failed to assign role to ${member.user.tag}:`, error.message);
             }

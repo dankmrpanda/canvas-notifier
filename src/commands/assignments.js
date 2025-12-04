@@ -126,7 +126,7 @@ function createAssignmentsEmbed(assignments) {
  * @returns {ActionRowBuilder|null} Action row with select menu or null
  */
 function createMarkDoneMenu(assignments) {
-    const pending = assignments.filter(a => !a.isDone).slice(0, 25);
+    const pending = assignments.filter(a => !a.isDone && a.roleId).slice(0, 25);
     
     if (pending.length === 0) {
         return null;
@@ -154,7 +154,7 @@ function createMarkDoneMenu(assignments) {
  * @returns {ActionRowBuilder|null} Action row with select menu or null
  */
 function createMarkUndoneMenu(assignments) {
-    const completed = assignments.filter(a => a.isDone).slice(0, 25);
+    const completed = assignments.filter(a => a.isDone && a.roleId).slice(0, 25);
     
     if (completed.length === 0) {
         return null;

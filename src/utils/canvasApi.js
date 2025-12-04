@@ -53,12 +53,15 @@ async function canvasApiRequestWithArrayParams(endpoint, params = {}, arrayParam
                 }
             });
             
-            // Handle rate limiting
-            if (response.status === 403) {
+            // Handle rate limiting (Canvas uses 403 with X-Rate-Limit-Remaining or 429)
+            if (response.status === 429 || response.status === 403) {
                 const rateLimitRemaining = response.headers.get('X-Rate-Limit-Remaining');
-                if (rateLimitRemaining === '0') {
-                    log.warn('Canvas API rate limit hit, waiting 60 seconds...');
-                    await delay(60000);
+                const retryAfter = response.headers.get('Retry-After');
+                
+                if (response.status === 429 || rateLimitRemaining === '0') {
+                    const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000;
+                    log.warn(`Canvas API rate limit hit, waiting ${waitTime / 1000} seconds...`);
+                    await delay(waitTime);
                     continue;
                 }
             }
@@ -122,12 +125,15 @@ async function canvasApiRequest(endpoint, params = {}) {
                 }
             });
             
-            // Handle rate limiting
-            if (response.status === 403) {
+            // Handle rate limiting (Canvas uses 403 with X-Rate-Limit-Remaining or 429)
+            if (response.status === 429 || response.status === 403) {
                 const rateLimitRemaining = response.headers.get('X-Rate-Limit-Remaining');
-                if (rateLimitRemaining === '0') {
-                    log.warn('Canvas API rate limit hit, waiting 60 seconds...');
-                    await delay(60000);
+                const retryAfter = response.headers.get('Retry-After');
+                
+                if (response.status === 429 || rateLimitRemaining === '0') {
+                    const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000;
+                    log.warn(`Canvas API rate limit hit, waiting ${waitTime / 1000} seconds...`);
+                    await delay(waitTime);
                     continue; // Retry the same page
                 }
             }
@@ -232,57 +238,11 @@ export function extractCourseCode(sectionName) {
 }
 
 /**
- * Fetch assignments from Canvas API for a specific course
+ * Fetch assignments from Canvas API for a specific course (with pagination)
  * @param {string} courseId - The Canvas course ID
  * @returns {Promise<Array>} Array of assignment objects
  */
 export async function fetchAssignmentsForCourse(courseId) {
-    const url = new URL(
-        `/api/v1/courses/${courseId}/assignments`,
-        CANVAS_CONFIG.baseUrl
-    );
-    
-    url.searchParams.set('per_page', String(CANVAS_CONFIG.assignmentsPerPage));
-    url.searchParams.set('order_by', 'due_at');
-    
-    try {
-        const response = await fetch(url.toString(), {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${CANVAS_TOKEN}`,
-                'Accept': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            log.canvasApi(`/courses/${courseId}/assignments`, 'error', { status: response.status, response: errorText });
-            return [];
-        }
-        
-        const assignments = await response.json();
-        
-        // Filter to only include assignments with future due dates
-        const now = new Date();
-        const filtered = assignments.filter(a => {
-            if (!a.due_at) return false;
-            return new Date(a.due_at) > now;
-        });
-        
-        log.debug(`Fetched ${filtered.length} upcoming assignments for course ${courseId}`);
-        return filtered;
-    } catch (error) {
-        log.error(`Failed to fetch assignments for course ${courseId}`, error);
-        return [];
-    }
-}
-
-/**
- * Fetch all assignments with pagination support for a specific course
- * @param {string} courseId - The Canvas course ID
- * @returns {Promise<Array>} Array of all assignment objects
- */
-export async function fetchAllAssignmentsForCourse(courseId) {
     const allAssignments = [];
     let page = 1;
     let hasMore = true;
@@ -306,14 +266,28 @@ export async function fetchAllAssignmentsForCourse(courseId) {
                 }
             });
             
+            // Handle rate limiting
+            if (response.status === 429 || response.status === 403) {
+                const rateLimitRemaining = response.headers.get('X-Rate-Limit-Remaining');
+                const retryAfter = response.headers.get('Retry-After');
+                
+                if (response.status === 429 || rateLimitRemaining === '0') {
+                    const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000;
+                    log.warn(`Canvas API rate limit hit, waiting ${waitTime / 1000} seconds...`);
+                    await delay(waitTime);
+                    continue;
+                }
+            }
+            
             if (!response.ok) {
-                log.canvasApi(`/courses/${courseId}/assignments`, 'error', { page, status: response.status });
+                const errorText = await response.text();
+                log.canvasApi(`/courses/${courseId}/assignments`, 'error', { status: response.status, response: errorText });
                 break;
             }
             
             const assignments = await response.json();
             
-            if (assignments.length === 0) {
+            if (!Array.isArray(assignments) || assignments.length === 0) {
                 hasMore = false;
             } else {
                 allAssignments.push(...assignments);
@@ -321,19 +295,31 @@ export async function fetchAllAssignmentsForCourse(courseId) {
                 
                 const linkHeader = response.headers.get('Link');
                 hasMore = linkHeader && linkHeader.includes('rel="next"');
+                
+                if (hasMore) {
+                    await delay(100);
+                }
             }
         } catch (error) {
-            log.error(`Failed to fetch page ${page} for course ${courseId}`, error);
+            log.error(`Failed to fetch assignments for course ${courseId}`, error);
             break;
         }
     }
     
+    // Filter to only include assignments with future due dates
     const now = new Date();
-    return allAssignments.filter(a => {
+    const filtered = allAssignments.filter(a => {
         if (!a.due_at) return false;
         return new Date(a.due_at) > now;
     });
+    
+    log.debug(`Fetched ${filtered.length} upcoming assignments for course ${courseId}`);
+    return filtered;
 }
+
+// fetchAllAssignmentsForCourse is now merged into fetchAssignmentsForCourse
+// Keeping alias for backward compatibility
+export const fetchAllAssignmentsForCourse = fetchAssignmentsForCourse;
 
 /**
  * Fetch all courses with their sections, terms, and check for assignments

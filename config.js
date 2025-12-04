@@ -274,10 +274,18 @@ export function getEmbedColor(hoursLeft) {
  */
 export function getReminderKey(hoursLeft, type = 'assignment') {
     const thresholds = REMINDER_THRESHOLDS[type];
-    const sortedThresholds = [...thresholds].sort((a, b) => a - b);
+    // Sort descending to check from largest to smallest
+    const sortedThresholds = [...thresholds].sort((a, b) => b - a);
     
-    for (const threshold of sortedThresholds) {
-        if (hoursLeft <= threshold) {
+    // Find the first threshold that hoursLeft is less than or equal to
+    // This ensures we trigger at the right time
+    for (let i = 0; i < sortedThresholds.length; i++) {
+        const threshold = sortedThresholds[i];
+        const nextThreshold = i < sortedThresholds.length - 1 ? sortedThresholds[i + 1] : -1;
+        
+        // Check if we're in the window for this threshold
+        // We want to trigger when hoursLeft crosses below the threshold
+        if (hoursLeft <= threshold && hoursLeft > nextThreshold) {
             return threshold;
         }
     }

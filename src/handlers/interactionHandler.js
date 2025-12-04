@@ -46,6 +46,11 @@ export async function handleInteraction(interaction) {
     } catch (error) {
         log.error('Error handling interaction', error);
         
+        // Don't try to respond to autocomplete interactions
+        if (interaction.isAutocomplete()) {
+            return;
+        }
+        
         // Try to respond with an error message
         try {
             const errorResponse = {

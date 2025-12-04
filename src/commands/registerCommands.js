@@ -101,7 +101,10 @@ async function registerCommands() {
 }
 
 // Run if executed directly (not imported)
-const isMainModule = import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`;
+// Handle both Unix and Windows paths
+const scriptPath = process.argv[1]?.replace(/\\/g, '/');
+const moduleUrl = import.meta.url.replace(/^file:\/\/\/?/, '');
+const isMainModule = scriptPath && moduleUrl.endsWith(scriptPath.split('/').pop());
 if (isMainModule) {
     registerCommands();
 }
