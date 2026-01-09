@@ -2,6 +2,8 @@
  * Role Manager
  * Handles creation and management of assignment-specific roles
  */
+import { delay } from './helpers.js';
+import log from './logger.js';
 
 /**
  * Generate a role name for an assignment
@@ -12,7 +14,7 @@ export function generateRoleName(assignment) {
     const prefix = '📝';
     const name = assignment.name || 'Assignment';
     const maxLength = 100 - prefix.length - 1;
-    const truncatedName = name.length > maxLength 
+    const truncatedName = name.length > maxLength
         ? name.substring(0, maxLength - 3) + '...'
         : name;
     return `${prefix} ${truncatedName}`;
@@ -26,14 +28,14 @@ export function generateRoleName(assignment) {
  */
 export async function getOrCreateAssignmentRole(guild, assignment) {
     const roleName = generateRoleName(assignment);
-    
+
     // Check if role already exists
     let role = guild.roles.cache.find(r => r.name === roleName);
-    
+
     if (role) {
         return role;
     }
-    
+
     // Create new role
     try {
         role = await guild.roles.create({
@@ -42,20 +44,16 @@ export async function getOrCreateAssignmentRole(guild, assignment) {
             mentionable: true,
             reason: `Assignment role for: ${assignment.name}`
         });
-        
-        console.log(`Created role: ${roleName}`);
+
+        log.discord('roleCreate', `Created assignment role: ${roleName}`, { roleId: role.id });
         return role;
     } catch (error) {
-        console.error(`Failed to create role "${roleName}":`, error.message);
+        log.error(`Failed to create role "${roleName}"`, error);
         return null;
     }
 }
 
-/**
- * Delay helper for rate limiting
- * @param {number} ms - Milliseconds to wait
- */
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 
 /**
  * Assign a role to all members who have the course role
@@ -68,43 +66,43 @@ export async function assignRoleToCourseMembersSync(guild, assignmentRole, cours
     if (!courseRoleId) {
         return 0;
     }
-    
+
     let assignedCount = 0;
-    
+
     try {
         // Fetch all members to ensure cache is populated
         await guild.members.fetch();
-        
+
         const courseRole = guild.roles.cache.get(courseRoleId);
         if (!courseRole) {
-            console.error(`Course role ${courseRoleId} not found`);
+            log.error(`Course role ${courseRoleId} not found`);
             return 0;
         }
-        
+
         // Get all members with the course role
         const membersWithCourseRole = courseRole.members;
-        
+
         for (const [, member] of membersWithCourseRole) {
             // Skip if already has the assignment role
             if (member.roles.cache.has(assignmentRole.id)) {
                 continue;
             }
-            
+
             try {
                 await member.roles.add(assignmentRole, 'New assignment posted');
                 assignedCount++;
                 // Rate limit protection - Discord allows 10 requests per 10 seconds for role changes
                 await delay(200);
             } catch (error) {
-                console.error(`Failed to assign role to ${member.user.tag}:`, error.message);
+                log.error(`Failed to assign role to ${member.user.tag}`, error);
             }
         }
-        
-        console.log(`Assigned "${assignmentRole.name}" to ${assignedCount} members`);
+
+        log.info(`Assigned "${assignmentRole.name}" to ${assignedCount} members`);
     } catch (error) {
-        console.error('Error assigning roles:', error.message);
+        log.error('Error assigning roles', error);
     }
-    
+
     return assignedCount;
 }
 
@@ -119,7 +117,7 @@ export async function removeAssignmentRole(member, role) {
         await member.roles.remove(role, 'Marked assignment as done');
         return true;
     } catch (error) {
-        console.error(`Failed to remove role from ${member.user.tag}:`, error.message);
+        log.error(`Failed to remove role from ${member.user.tag}`, error);
         return false;
     }
 }
@@ -135,7 +133,7 @@ export async function addAssignmentRole(member, role) {
         await member.roles.add(role, 'Marked assignment as not done');
         return true;
     } catch (error) {
-        console.error(`Failed to add role to ${member.user.tag}:`, error.message);
+        log.error(`Failed to add role to ${member.user.tag}`, error);
         return false;
     }
 }
@@ -151,11 +149,11 @@ export async function deleteAssignmentRole(guild, roleName) {
         const role = guild.roles.cache.find(r => r.name === roleName);
         if (role) {
             await role.delete('Assignment deadline passed');
-            console.log(`Deleted role: ${roleName}`);
+            log.info(`Deleted role: ${roleName}`);
             return true;
         }
     } catch (error) {
-        console.error(`Failed to delete role "${roleName}":`, error.message);
+        log.error(`Failed to delete role "${roleName}"`, error);
     }
     return false;
 }

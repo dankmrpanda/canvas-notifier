@@ -10,28 +10,9 @@ import {
     createCustomReminderEmbed,
     getReminderLabel
 } from '../utils/embedBuilder.js';
+import { getChannel } from '../utils/helpers.js';
 import log from '../utils/logger.js';
 
-/**
- * Get channel with fallback to fetch if not in cache
- * @param {Client} client - Discord client
- * @param {string} channelId - Channel ID
- * @returns {Promise<import('discord.js').Channel|null>} Channel or null
- */
-async function getChannel(client, channelId) {
-    let channel = client.channels.cache.get(channelId);
-
-    if (!channel) {
-        try {
-            channel = await client.channels.fetch(channelId);
-        } catch (error) {
-            log.error(`Failed to fetch channel ${channelId}`, error);
-            return null;
-        }
-    }
-
-    return channel;
-}
 
 /**
  * Check and send assignment reminders for a single course
@@ -99,10 +80,10 @@ async function checkCourseAssignmentReminders(client, courseConfig) {
                     log.error(`Failed to delete previous message ${data.assignments[i].messageId}`, error);
                 }
             }
-            
+
             const { embed, components } = createAssignmentReminderMessage(assignment, hoursLeft);
             const label = getReminderLabel(reminderKey, 'assignment');
-            
+
             // Ping the assignment role (only users who haven't marked done)
             const rolePing = assignment.roleId ? `<@&${assignment.roleId}> ` : '';
 
@@ -136,7 +117,7 @@ export async function checkAssignmentReminders(client) {
     if (!COURSES || COURSES.length === 0) {
         return; // No courses configured yet
     }
-    
+
     for (const courseConfig of COURSES) {
         try {
             await checkCourseAssignmentReminders(client, courseConfig);
@@ -154,7 +135,7 @@ export async function checkCustomReminders(client) {
     if (!COURSES || COURSES.length === 0) {
         return; // No courses configured yet
     }
-    
+
     const defaultConfig = COURSES[0];
     if (!defaultConfig || !defaultConfig.channelId) {
         log.debug('No default channel configured for custom reminders');

@@ -5,13 +5,19 @@
  */
 import { ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { fetchCoursesWithAssignments } from './canvasApi.js';
+import {
+    updateRoleEmbedMessageId,
+    getRoleEmbedMessageId,
+    updateRolesChannelForCategory,
+    getRolesChannelForCategory,
+    deleteCourseDataFile,
+    loadCourseData,
+    saveCourseConfigs,
+    loadCourseConfigs
+} from './dataStore.js';
+import { delay } from './helpers.js';
+import { COURSES, setCourses } from '../../config.js';
 import log from './logger.js';
-
-/**
- * Delay helper for rate limiting
- * @param {number} ms - Milliseconds to wait
- */
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Sanitize a string for use as a Discord channel name
@@ -45,17 +51,17 @@ function sanitizeRoleName(name) {
  */
 async function getOrCreateCategory(guild, categoryName) {
     const sanitizedName = categoryName.substring(0, 100);
-    
+
     let category = guild.channels.cache.find(
-        c => c.type === ChannelType.GuildCategory && 
-             c.name.toLowerCase() === sanitizedName.toLowerCase()
+        c => c.type === ChannelType.GuildCategory &&
+            c.name.toLowerCase() === sanitizedName.toLowerCase()
     );
-    
+
     if (category) {
         log.debug(`Found existing category: ${category.name}`);
         return category;
     }
-    
+
     try {
         await delay(500);
         category = await guild.channels.create({
@@ -63,7 +69,7 @@ async function getOrCreateCategory(guild, categoryName) {
             type: ChannelType.GuildCategory,
             reason: `Auto-created for Canvas term: ${categoryName}`
         });
-        
+
         log.discord('categoryCreate', `Created category: ${category.name}`, { categoryId: category.id });
         return category;
     } catch (error) {
@@ -87,16 +93,16 @@ async function getOrCreateCategory(guild, categoryName) {
  */
 async function getOrCreateRole(guild, roleName, color = 0x3498db) {
     const sanitizedName = sanitizeRoleName(roleName);
-    
+
     let role = guild.roles.cache.find(
         r => r.name.toLowerCase() === sanitizedName.toLowerCase()
     );
-    
+
     if (role) {
         log.debug(`Found existing role: ${role.name}`);
         return role;
     }
-    
+
     try {
         await delay(500);
         role = await guild.roles.create({
@@ -105,7 +111,7 @@ async function getOrCreateRole(guild, roleName, color = 0x3498db) {
             mentionable: true,
             reason: `Auto-created for Canvas course: ${roleName}`
         });
-        
+
         log.discord('roleCreate', `Created role: ${role.name}`, { roleId: role.id });
         return role;
     } catch (error) {
@@ -131,43 +137,43 @@ async function getOrCreateRole(guild, roleName, color = 0x3498db) {
  */
 async function getOrCreateChannel(guild, channelName, category, courseRole) {
     const sanitizedName = sanitizeChannelName(channelName);
-    
+
     // Check if channel already exists in this category
     let channel = guild.channels.cache.find(
-        c => c.type === ChannelType.GuildText && 
-             c.name.toLowerCase() === sanitizedName.toLowerCase() &&
-             c.parentId === category?.id
+        c => c.type === ChannelType.GuildText &&
+            c.name.toLowerCase() === sanitizedName.toLowerCase() &&
+            c.parentId === category?.id
     );
-    
+
     if (channel) {
         log.debug(`Found existing channel: ${channel.name}`);
         return channel;
     }
-    
+
     // Also check without category constraint
     channel = guild.channels.cache.find(
-        c => c.type === ChannelType.GuildText && 
-             c.name.toLowerCase() === sanitizedName.toLowerCase()
+        c => c.type === ChannelType.GuildText &&
+            c.name.toLowerCase() === sanitizedName.toLowerCase()
     );
-    
+
     if (channel) {
         log.debug(`Found existing channel (different category): ${channel.name}`);
         return channel;
     }
-    
+
     try {
         await delay(500);
-        
+
         const channelOptions = {
             name: sanitizedName,
             type: ChannelType.GuildText,
             reason: `Auto-created for Canvas course assignments`
         };
-        
+
         if (category) {
             channelOptions.parent = category.id;
         }
-        
+
         // RESTRICTED: Only course role members can see this channel
         const permissionOverwrites = [
             {
@@ -175,7 +181,7 @@ async function getOrCreateChannel(guild, channelName, category, courseRole) {
                 deny: [PermissionFlagsBits.ViewChannel]
             }
         ];
-        
+
         // Bot needs access
         if (guild.members.me?.id) {
             permissionOverwrites.push({
@@ -183,7 +189,7 @@ async function getOrCreateChannel(guild, channelName, category, courseRole) {
                 allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages]
             });
         }
-        
+
         // Course role can view and send
         if (courseRole) {
             permissionOverwrites.push({
@@ -191,11 +197,11 @@ async function getOrCreateChannel(guild, channelName, category, courseRole) {
                 allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
             });
         }
-        
+
         channelOptions.permissionOverwrites = permissionOverwrites;
-        
+
         channel = await guild.channels.create(channelOptions);
-        
+
         log.discord('channelCreate', `Created restricted channel: ${channel.name}${category ? ` under ${category.name}` : ''}`, { channelId: channel.id });
         return channel;
     } catch (error) {
@@ -221,15 +227,15 @@ function createRoleSelectionEmbed(courseConfig) {
         .setDescription(`**${courseConfig.courseName}**\n\nClick the button below to join or leave this course.\n\n• When you join, you'll get access to the course channel and receive assignment notifications.\n• When you leave, you'll lose access and stop receiving notifications.`)
         .setColor(0x3498db)
         .setFooter({ text: 'Click to toggle your enrollment' });
-    
+
     const button = new ButtonBuilder()
         .setCustomId(`course_role_toggle:${courseConfig.courseId}:${courseConfig.roleId}`)
         .setLabel('Toggle Course Role')
         .setStyle(ButtonStyle.Primary)
         .setEmoji('🎓');
-    
+
     const row = new ActionRowBuilder().addComponents(button);
-    
+
     return { embed, components: [row] };
 }
 
@@ -241,22 +247,22 @@ function createRoleSelectionEmbed(courseConfig) {
  */
 async function getOrCreateRolesChannel(guild, category) {
     const channelName = 'roles';
-    
+
     // Check if roles channel already exists in this category
     let channel = guild.channels.cache.find(
-        c => c.type === ChannelType.GuildText && 
-             c.name === channelName &&
-             c.parentId === category?.id
+        c => c.type === ChannelType.GuildText &&
+            c.name === channelName &&
+            c.parentId === category?.id
     );
-    
+
     if (channel) {
         log.debug(`Found existing roles channel in ${category.name}`);
         return channel;
     }
-    
+
     try {
         await delay(500);
-        
+
         channel = await guild.channels.create({
             name: channelName,
             type: ChannelType.GuildText,
@@ -275,7 +281,7 @@ async function getOrCreateRolesChannel(guild, category) {
             ].filter(p => p.id),
             reason: `Auto-created for course role selection`
         });
-        
+
         log.discord('channelCreate', `Created roles channel in ${category.name}`, { channelId: channel.id });
         return channel;
     } catch (error) {
@@ -285,7 +291,76 @@ async function getOrCreateRolesChannel(guild, category) {
 }
 
 /**
+ * Add a single course role selection embed to a roles channel
+ * Checks if embed already exists to avoid duplicates. Saves message ID.
+ * @param {TextChannel} rolesChannel - The roles channel
+ * @param {Object} courseConfig - Course configuration
+ * @returns {Promise<boolean>} Success status
+ */
+async function addCourseRoleEmbed(rolesChannel, courseConfig) {
+    try {
+        if (!courseConfig.roleId) {
+            log.warn(`Cannot add role embed for ${courseConfig.courseCode} - no roleId`);
+            return false;
+        }
+
+        // Check if we already have a saved message ID for this course
+        const savedMessageId = await getRoleEmbedMessageId(courseConfig.courseId);
+        if (savedMessageId) {
+            // Verify the message still exists
+            try {
+                await rolesChannel.messages.fetch(savedMessageId);
+                log.debug(`Role embed for ${courseConfig.courseCode} already exists (message ${savedMessageId})`);
+                return true;
+            } catch {
+                // Message doesn't exist anymore, will create new one
+                log.debug(`Saved role embed message ${savedMessageId} not found, creating new one`);
+            }
+        }
+
+        // Check if there are any existing messages (need header)
+        const messages = await rolesChannel.messages.fetch({ limit: 10 });
+        const botMessages = messages.filter(m => m.author.id === rolesChannel.guild.members.me?.id);
+
+        // Check if we already have an embed for this course (avoid duplicates)
+        for (const [, msg] of botMessages) {
+            if (msg.embeds?.length > 0) {
+                const embedTitle = msg.embeds[0].title || '';
+                if (embedTitle.includes(courseConfig.courseCode)) {
+                    log.debug(`Role embed for ${courseConfig.courseCode} already exists, saving message ID`);
+                    // Save the message ID so we don't check again
+                    await updateRoleEmbedMessageId(courseConfig.courseId, msg.id);
+                    return true;
+                }
+            }
+        }
+
+        // If no bot messages exist, send the header first
+        if (botMessages.size === 0) {
+            await rolesChannel.send({
+                content: '# 🎓 Course Role Selection\nClick the buttons below to join or leave courses. You\'ll get access to course channels and assignment notifications.'
+            });
+            await delay(500);
+        }
+
+        // Send the course embed
+        const { embed, components } = createRoleSelectionEmbed(courseConfig);
+        const message = await rolesChannel.send({ embeds: [embed], components });
+
+        // Save the message ID
+        await updateRoleEmbedMessageId(courseConfig.courseId, message.id);
+
+        log.info(`Added role selection embed for ${courseConfig.courseCode} to ${rolesChannel.name}`);
+        return true;
+    } catch (error) {
+        log.error(`Failed to add course role embed for ${courseConfig.courseCode}`, error);
+        return false;
+    }
+}
+
+/**
  * Send or update role selection embeds in a roles channel
+ * Saves message IDs for each course embed
  * @param {TextChannel} rolesChannel - The roles channel
  * @param {Array} coursesInTerm - Courses in this term
  */
@@ -294,7 +369,7 @@ async function setupRoleSelectionEmbeds(rolesChannel, coursesInTerm) {
         // Delete existing messages from the bot
         const messages = await rolesChannel.messages.fetch({ limit: 100 });
         const botMessages = messages.filter(m => m.author.id === rolesChannel.guild.members.me?.id);
-        
+
         for (const [, msg] of botMessages) {
             try {
                 await msg.delete();
@@ -303,23 +378,26 @@ async function setupRoleSelectionEmbeds(rolesChannel, coursesInTerm) {
                 // Ignore deletion errors
             }
         }
-        
+
         // Send header
         await rolesChannel.send({
             content: '# 🎓 Course Role Selection\nClick the buttons below to join or leave courses. You\'ll get access to course channels and assignment notifications.'
         });
-        
+
         await delay(500);
-        
-        // Send embed for each course
+
+        // Send embed for each course and save message IDs
         for (const course of coursesInTerm) {
             if (!course.roleId) continue;
-            
+
             const { embed, components } = createRoleSelectionEmbed(course);
-            await rolesChannel.send({ embeds: [embed], components });
+            const message = await rolesChannel.send({ embeds: [embed], components });
+
+            // Save the message ID for this course
+            await updateRoleEmbedMessageId(course.courseId, message.id);
             await delay(500);
         }
-        
+
         log.info(`Set up role selection embeds in ${rolesChannel.name} for ${coursesInTerm.length} courses`);
     } catch (error) {
         log.error(`Failed to setup role selection embeds`, error);
@@ -330,7 +408,7 @@ async function setupRoleSelectionEmbeds(rolesChannel, coursesInTerm) {
 /**
  * Set up guild structure based on Canvas courses
  * Creates categories (by term), roles (by course code), channels (by course code),
- * and role selection channels
+ * and role selection channels. Saves roles channel IDs in course configs.
  * 
  * @param {Guild} guild - Discord guild
  * @param {Object} options - Setup options
@@ -339,24 +417,25 @@ async function setupRoleSelectionEmbeds(rolesChannel, coursesInTerm) {
  */
 export async function setupGuildFromCanvas(guild, { sendRoleEmbeds = true } = {}) {
     log.info('Fetching courses from Canvas...');
-    
+
     const courses = await fetchCoursesWithAssignments();
-    
+
     if (courses.length === 0) {
         log.info('No courses with assignments found');
         return [];
     }
-    
+
     log.info(`Found ${courses.length} courses with assignments`);
-    
+
     const courseConfigs = [];
     const categoryCache = new Map(); // termName -> category
     const termCourses = new Map(); // termName -> courses[]
-    
+    const rolesChannelCache = new Map(); // categoryId -> rolesChannelId
+
     // First pass: create categories, roles, and channels
     for (const course of courses) {
         log.info(`Setting up course: ${course.courseName} (${course.courseCode})`);
-        
+
         // Get or create category for this term
         let category = categoryCache.get(course.termName);
         if (!category) {
@@ -365,13 +444,13 @@ export async function setupGuildFromCanvas(guild, { sendRoleEmbeds = true } = {}
                 categoryCache.set(course.termName, category);
             }
         }
-        
+
         // Create role based on course code
         const role = await getOrCreateRole(guild, course.courseCode, 0x3498db);
-        
+
         // Create RESTRICTED channel (only course role can see)
         const channel = await getOrCreateChannel(guild, course.courseCode, category, role);
-        
+
         if (channel) {
             const config = {
                 courseId: String(course.courseId),
@@ -380,11 +459,12 @@ export async function setupGuildFromCanvas(guild, { sendRoleEmbeds = true } = {}
                 courseName: course.courseName,
                 courseCode: course.courseCode,
                 termName: course.termName,
-                categoryId: category?.id || null
+                categoryId: category?.id || null,
+                rolesChannelId: null  // Will be set in second pass
             };
-            
+
             courseConfigs.push(config);
-            
+
             // Track courses by term for role selection setup
             if (!termCourses.has(course.termName)) {
                 termCourses.set(course.termName, []);
@@ -392,22 +472,28 @@ export async function setupGuildFromCanvas(guild, { sendRoleEmbeds = true } = {}
             termCourses.get(course.termName).push(config);
         }
     }
-    
-    // Second pass: create role selection channels for each term (only on initial setup)
+
+    // Second pass: create role selection channels for each term
     if (sendRoleEmbeds) {
         for (const [termName, coursesInTerm] of termCourses) {
             const category = categoryCache.get(termName);
             if (!category) continue;
-            
+
             const rolesChannel = await getOrCreateRolesChannel(guild, category);
             if (rolesChannel) {
+                // Save roles channel ID to all courses in this term
+                rolesChannelCache.set(category.id, rolesChannel.id);
+                for (const config of coursesInTerm) {
+                    config.rolesChannelId = rolesChannel.id;
+                }
+
                 await setupRoleSelectionEmbeds(rolesChannel, coursesInTerm);
             }
         }
     }
-    
+
     log.info(`Guild setup complete. Configured ${courseConfigs.length} courses.`);
-    
+
     return courseConfigs;
 }
 
@@ -419,17 +505,17 @@ export async function setupGuildFromCanvas(guild, { sendRoleEmbeds = true } = {}
  */
 export async function verifyGuildSetup(guild, courseConfigs) {
     const updatedConfigs = [];
-    
+
     for (const config of courseConfigs) {
         let needsUpdate = false;
         const updatedConfig = { ...config };
-        
+
         const channel = guild.channels.cache.get(config.channelId);
         if (!channel) {
             log.warn(`Channel missing for course ${config.courseCode}, will recreate`);
             needsUpdate = true;
         }
-        
+
         if (config.roleId) {
             const role = guild.roles.cache.get(config.roleId);
             if (!role) {
@@ -437,7 +523,7 @@ export async function verifyGuildSetup(guild, courseConfigs) {
                 needsUpdate = true;
             }
         }
-        
+
         if (needsUpdate) {
             let category = null;
             if (config.categoryId) {
@@ -447,22 +533,22 @@ export async function verifyGuildSetup(guild, courseConfigs) {
                 category = await getOrCreateCategory(guild, config.termName);
                 updatedConfig.categoryId = category?.id || null;
             }
-            
+
             if (!guild.roles.cache.get(config.roleId)) {
                 const role = await getOrCreateRole(guild, config.courseCode);
                 updatedConfig.roleId = role?.id || null;
             }
-            
+
             if (!guild.channels.cache.get(config.channelId)) {
                 const role = guild.roles.cache.get(updatedConfig.roleId);
                 const newChannel = await getOrCreateChannel(guild, config.courseCode, category, role);
                 updatedConfig.channelId = newChannel?.id || config.channelId;
             }
         }
-        
+
         updatedConfigs.push(updatedConfig);
     }
-    
+
     return updatedConfigs;
 }
 
@@ -475,13 +561,13 @@ export async function verifyGuildSetup(guild, courseConfigs) {
  */
 export async function syncAssignmentRoles(member, courseRoleId, added, assignments) {
     const guild = member.guild;
-    
+
     for (const assignment of assignments) {
         if (!assignment.roleId) continue;
-        
+
         const assignmentRole = guild.roles.cache.get(assignment.roleId);
         if (!assignmentRole) continue;
-        
+
         try {
             if (added) {
                 // Add assignment role if member doesn't have it
@@ -502,5 +588,173 @@ export async function syncAssignmentRoles(member, courseRoleId, added, assignmen
         }
     }
 }
+/**
+ * Clean up courses that no longer exist in Canvas
+ * Removes channels, roles, data files, and empty categories
+ * @param {Guild} guild - Discord guild
+ * @param {Array} currentCanvasCourseIds - Array of course IDs currently in Canvas
+ * @returns {Promise<{removedCourses: number, removedCategories: number}>} Cleanup stats
+ */
+export async function cleanupStaleCourses(guild, currentCanvasCourseIds) {
+    const currentIds = new Set(currentCanvasCourseIds.map(id => String(id)));
+    const configs = await loadCourseConfigs();
 
-export { getOrCreateCategory, getOrCreateRole, getOrCreateChannel, sanitizeChannelName, createRoleSelectionEmbed };
+    if (!configs || configs.length === 0) {
+        return { removedCourses: 0, removedCategories: 0 };
+    }
+
+    const staleCourses = configs.filter(c => !currentIds.has(String(c.courseId)));
+
+    if (staleCourses.length === 0) {
+        log.debug('No stale courses to clean up');
+        return { removedCourses: 0, removedCategories: 0 };
+    }
+
+    log.info(`Found ${staleCourses.length} stale courses to clean up`);
+
+    // Track categories and their remaining courses
+    const categoryCourseCounts = new Map();
+    for (const config of configs) {
+        if (config.categoryId) {
+            const count = categoryCourseCounts.get(config.categoryId) || 0;
+            categoryCourseCounts.set(config.categoryId, count + 1);
+        }
+    }
+
+    let removedCourses = 0;
+    const categoriesToCheck = new Set();
+
+    // Clean up each stale course
+    for (const course of staleCourses) {
+        log.info(`Cleaning up stale course: ${course.courseCode} (${course.courseId})`);
+
+        // Track category for potential deletion
+        if (course.categoryId) {
+            categoriesToCheck.add(course.categoryId);
+            const count = categoryCourseCounts.get(course.categoryId) || 1;
+            categoryCourseCounts.set(course.categoryId, count - 1);
+        }
+
+        // Delete course channel
+        if (course.channelId) {
+            try {
+                const channel = guild.channels.cache.get(course.channelId);
+                if (channel) {
+                    await channel.delete('Course no longer exists in Canvas');
+                    log.info(`Deleted channel for ${course.courseCode}`);
+                    await delay(500);
+                }
+            } catch (error) {
+                log.error(`Failed to delete channel for ${course.courseCode}`, error);
+            }
+        }
+
+        // Delete course role
+        if (course.roleId) {
+            try {
+                const role = guild.roles.cache.get(course.roleId);
+                if (role) {
+                    await role.delete('Course no longer exists in Canvas');
+                    log.info(`Deleted role for ${course.courseCode}`);
+                    await delay(500);
+                }
+            } catch (error) {
+                log.error(`Failed to delete role for ${course.courseCode}`, error);
+            }
+        }
+
+        // Delete assignment roles for this course
+        try {
+            const courseData = await loadCourseData(course.courseId);
+            if (courseData.assignments && courseData.assignments.length > 0) {
+                for (const assignment of courseData.assignments) {
+                    if (assignment.roleId) {
+                        const assignmentRole = guild.roles.cache.get(assignment.roleId);
+                        if (assignmentRole) {
+                            await assignmentRole.delete('Course no longer exists in Canvas');
+                            log.info(`Deleted assignment role "${assignmentRole.name}"`);
+                            await delay(300);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            log.error(`Failed to delete assignment roles for ${course.courseCode}`, error);
+        }
+
+        // Delete role embed message if exists
+        if (course.rolesChannelId) {
+            try {
+                const rolesChannel = guild.channels.cache.get(course.rolesChannelId);
+                if (rolesChannel) {
+                    const messageId = await getRoleEmbedMessageId(course.courseId);
+                    if (messageId) {
+                        try {
+                            const message = await rolesChannel.messages.fetch(messageId);
+                            await message.delete();
+                            log.info(`Deleted role embed message for ${course.courseCode}`);
+                        } catch {
+                            // Message may already be deleted
+                        }
+                    }
+                }
+            } catch (error) {
+                log.error(`Failed to delete role embed for ${course.courseCode}`, error);
+            }
+        }
+
+        // Delete course data file
+        await deleteCourseDataFile(course.courseId);
+
+        removedCourses++;
+    }
+
+    // Check for empty categories and delete them
+    let removedCategories = 0;
+    for (const categoryId of categoriesToCheck) {
+        const remainingCount = categoryCourseCounts.get(categoryId) || 0;
+
+        if (remainingCount <= 0) {
+            log.info(`Category ${categoryId} has no remaining courses, deleting...`);
+
+            try {
+                const category = guild.channels.cache.get(categoryId);
+                if (category) {
+                    // First, delete all channels in this category (including roles channel)
+                    const channels = guild.channels.cache.filter(
+                        c => c.parentId === categoryId
+                    );
+
+                    for (const [, channel] of channels) {
+                        try {
+                            await channel.delete('Term category no longer has courses');
+                            log.info(`Deleted channel: ${channel.name}`);
+                            await delay(500);
+                        } catch (e) {
+                            log.error(`Failed to delete channel ${channel.name}`, e);
+                        }
+                    }
+
+                    // Then delete the category itself
+                    await category.delete('Term no longer has courses in Canvas');
+                    log.info(`Deleted empty category: ${category.name}`);
+                    removedCategories++;
+                    await delay(500);
+                }
+            } catch (error) {
+                log.error(`Failed to delete category ${categoryId}`, error);
+            }
+        }
+    }
+
+    // Update the config to remove stale courses
+    const updatedConfigs = configs.filter(c => currentIds.has(String(c.courseId)));
+    setCourses(updatedConfigs);
+    await saveCourseConfigs(updatedConfigs);
+
+    log.info(`Cleanup complete: removed ${removedCourses} courses, ${removedCategories} categories`);
+
+    return { removedCourses, removedCategories };
+}
+
+export { getOrCreateCategory, getOrCreateRole, getOrCreateChannel, getOrCreateRolesChannel, addCourseRoleEmbed, sanitizeChannelName, createRoleSelectionEmbed };
